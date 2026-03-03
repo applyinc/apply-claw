@@ -103,7 +103,7 @@ describe("POST /api/workspace/init", () => {
     expect(writeFileSync).toHaveBeenCalled();
   });
 
-  it("seeds Dench skill into workspace/skills/dench/SKILL.md (not state dir)", async () => {
+  it("seeds CRM skill into workspace/skills/crm/SKILL.md (not state dir)", async () => {
     const { existsSync, cpSync, mkdirSync } = await import("node:fs");
     const workspace = await import("@/lib/workspace");
     vi.mocked(workspace.discoverWorkspaces).mockReturnValue([]);
@@ -112,7 +112,7 @@ describe("POST /api/workspace/init", () => {
     vi.mocked(existsSync).mockImplementation((p) => {
       const s = String(p);
       if (s.endsWith("docs/reference/templates/AGENTS.md")) {return true;}
-      if (s.endsWith("skills/dench/SKILL.md")) {return true;}
+      if (s.endsWith("skills/crm/SKILL.md")) {return true;}
       return false;
     });
 
@@ -120,13 +120,13 @@ describe("POST /api/workspace/init", () => {
     expect(response.status).toBe(200);
 
     const json = await response.json();
-    expect(json.denchSynced).toBe(true);
+    expect(json.crmSynced).toBe(true);
 
     const cpSyncCalls = vi.mocked(cpSync).mock.calls;
-    const denchCopy = cpSyncCalls.find(
-      (call) => String(call[1]).includes(join(workspaceDir, "skills", "dench")),
+    const crmCopy = cpSyncCalls.find(
+      (call) => String(call[1]).includes(join(workspaceDir, "skills", "crm")),
     );
-    expect(denchCopy).toBeTruthy();
+    expect(crmCopy).toBeTruthy();
 
     const mkdirCalls = vi.mocked(mkdirSync).mock.calls;
     const skillsMkdir = mkdirCalls.find(
@@ -150,7 +150,7 @@ describe("POST /api/workspace/init", () => {
     expect(response.status).toBe(200);
 
     const workspaceDir = join(STATE_DIR, "workspace-work");
-    const expectedSkillPath = join(workspaceDir, "skills", "dench", "SKILL.md");
+    const expectedSkillPath = join(workspaceDir, "skills", "crm", "SKILL.md");
     const identityWrites = vi.mocked(writeFileSync).mock.calls.filter(
       (call) => String(call[0]).endsWith("IDENTITY.md"),
     );

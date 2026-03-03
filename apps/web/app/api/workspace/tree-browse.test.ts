@@ -124,7 +124,7 @@ describe("Workspace Tree & Browse API", () => {
       expect(json.workspaceRoot).toBe("/ws");
     });
 
-    it("omits root IDENTITY.md from the workspace tree", async () => {
+    it("includes root IDENTITY.md in the workspace tree", async () => {
       const { resolveWorkspaceRoot } = await import("@/lib/workspace");
       vi.mocked(resolveWorkspaceRoot).mockReturnValue("/ws");
       const { readdirSync: mockReaddir, existsSync: mockExists } = await import("node:fs");
@@ -144,11 +144,11 @@ describe("Workspace Tree & Browse API", () => {
       const res = await GET(req);
       const json = await res.json();
       const paths = (json.tree as Array<{ path: string }>).map((n) => n.path);
-      expect(paths).not.toContain("IDENTITY.md");
+      expect(paths).toContain("IDENTITY.md");
       expect(paths).toContain("notes.md");
     });
 
-    it("omits managed dench skill from the virtual skills folder", async () => {
+    it("omits managed crm skill from the virtual skills folder", async () => {
       const { resolveWorkspaceRoot } = await import("@/lib/workspace");
       vi.mocked(resolveWorkspaceRoot).mockReturnValue("/ws");
       const { readdirSync: mockReaddir, existsSync: mockExists } = await import("node:fs");
@@ -158,7 +158,7 @@ describe("Workspace Tree & Browse API", () => {
           value === "/ws" ||
           value === "/ws/skills" ||
           value === "/ws/skills/alpha/SKILL.md" ||
-          value === "/ws/skills/dench/SKILL.md"
+          value === "/ws/skills/crm/SKILL.md"
         );
       });
       vi.mocked(mockReaddir).mockImplementation((dir) => {
@@ -168,7 +168,7 @@ describe("Workspace Tree & Browse API", () => {
         if (String(dir) === "/ws/skills") {
           return [
             makeDirent("alpha", true),
-            makeDirent("dench", true),
+            makeDirent("crm", true),
           ] as unknown as Dirent[];
         }
         return [] as unknown as Dirent[];
@@ -183,7 +183,7 @@ describe("Workspace Tree & Browse API", () => {
       );
       const skillPaths = (skillsFolder?.children ?? []).map((child) => child.path);
       expect(skillPaths).toContain("~skills/alpha/SKILL.md");
-      expect(skillPaths).not.toContain("~skills/dench/SKILL.md");
+      expect(skillPaths).not.toContain("~skills/crm/SKILL.md");
     });
   });
 
@@ -241,7 +241,7 @@ describe("Workspace Tree & Browse API", () => {
       expect(json.items).toBeDefined();
     });
 
-    it("omits root IDENTITY.md from sidebar file suggestions", async () => {
+    it("includes root IDENTITY.md in sidebar file suggestions", async () => {
       const { resolveWorkspaceRoot } = await import("@/lib/workspace");
       vi.mocked(resolveWorkspaceRoot).mockReturnValue("/ws");
       const { existsSync: mockExists, readdirSync: mockReaddir } = await import("node:fs");
@@ -263,7 +263,7 @@ describe("Workspace Tree & Browse API", () => {
       const json = await res.json();
       const names = (json.items as Array<{ name: string }>).map((item) => item.name);
       expect(names).toContain("doc.md");
-      expect(names).not.toContain("IDENTITY.md");
+      expect(names).toContain("IDENTITY.md");
     });
   });
 

@@ -16,13 +16,13 @@ function createTempDir(): string {
 function createPackageRoot(tempDir: string): string {
   const pkgRoot = path.join(tempDir, "pkg");
   const seedDir = path.join(pkgRoot, "assets", "seed");
-  const skillsDir = path.join(pkgRoot, "skills", "dench");
+  const skillsDir = path.join(pkgRoot, "skills", "crm");
   mkdirSync(seedDir, { recursive: true });
   mkdirSync(skillsDir, { recursive: true });
   writeFileSync(path.join(seedDir, "workspace.duckdb"), "SEED_DB_CONTENT", "utf-8");
   writeFileSync(
     path.join(skillsDir, "SKILL.md"),
-    "---\nname: database-crm-system\n---\n# Dench CRM\n",
+    "---\nname: database-crm-system\n---\n# CRM\n",
     "utf-8",
   );
   return pkgRoot;
@@ -39,17 +39,17 @@ describe("seedWorkspaceFromAssets", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("seeds Dench skill inside the workspace (not in state dir)", () => {
+  it("seeds CRM skill inside the workspace (not in state dir)", () => {
     const packageRoot = createPackageRoot(tempDir);
     const workspaceDir = path.join(tempDir, "workspace-main");
 
     seedWorkspaceFromAssets({ workspaceDir, packageRoot });
 
-    const skillPath = path.join(workspaceDir, "skills", "dench", "SKILL.md");
+    const skillPath = path.join(workspaceDir, "skills", "crm", "SKILL.md");
     expect(existsSync(skillPath)).toBe(true);
     expect(readFileSync(skillPath, "utf-8")).toContain("database-crm-system");
 
-    const stateSkillPath = path.join(tempDir, "skills", "dench", "SKILL.md");
+    const stateSkillPath = path.join(tempDir, "skills", "crm", "SKILL.md");
     expect(existsSync(stateSkillPath)).toBe(false);
   });
 
@@ -64,8 +64,8 @@ describe("seedWorkspaceFromAssets", () => {
 
     const identityContent = readFileSync(identityPath, "utf-8");
     expect(identityContent).toContain("Ironclaw");
-    expect(identityContent).toContain(path.join(workspaceDir, "skills", "dench", "SKILL.md"));
-    expect(identityContent).not.toContain("~skills/dench/SKILL.md");
+    expect(identityContent).toContain(path.join(workspaceDir, "skills", "crm", "SKILL.md"));
+    expect(identityContent).not.toContain("~skills/crm/SKILL.md");
   });
 
   it("IDENTITY.md references Ironclaw system prompt contract", () => {
@@ -119,13 +119,13 @@ describe("seedWorkspaceFromAssets", () => {
     expect(identityContent).not.toContain("# stale identity");
   });
 
-  it("includes skills/dench/SKILL.md in projection files list", () => {
+  it("includes skills/crm/SKILL.md in projection files list", () => {
     const packageRoot = createPackageRoot(tempDir);
     const workspaceDir = path.join(tempDir, "workspace-list");
 
     const result = seedWorkspaceFromAssets({ workspaceDir, packageRoot });
 
-    expect(result.projectionFiles).toContain("skills/dench/SKILL.md");
+    expect(result.projectionFiles).toContain("skills/crm/SKILL.md");
     expect(result.projectionFiles).toContain("IDENTITY.md");
   });
 });

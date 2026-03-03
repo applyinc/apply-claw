@@ -486,7 +486,7 @@ describe("bootstrapCommand always-onboard behavior", () => {
     expect(readFileSync(workspaceDbPath, "utf-8")).toBe("existing-db-content");
     const identityContent = readFileSync(identityPath, "utf-8");
     expect(identityContent).toContain("You are **Ironclaw**");
-    expect(identityContent).toContain("~skills/dench/SKILL.md");
+    expect(identityContent).toContain("~skills/crm/SKILL.md");
     expect(identityContent).not.toContain("# stale identity");
   });
 
@@ -530,17 +530,17 @@ describe("bootstrapCommand always-onboard behavior", () => {
     expect(existsSync(identityPath)).toBe(true);
     const identityContent = readFileSync(identityPath, "utf-8");
     expect(identityContent).toContain("You are **Ironclaw**");
-    expect(identityContent).toContain("~skills/dench/SKILL.md");
+    expect(identityContent).toContain("~skills/crm/SKILL.md");
   });
 
-  it("installs Dench skill into managed profile skills directory (keeps it out of editable workspace)", async () => {
+  it("installs CRM skill into managed profile skills directory (keeps it out of editable workspace)", async () => {
     const runtime: RuntimeEnv = {
       log: vi.fn(),
       error: vi.fn(),
       exit: vi.fn(),
     };
-    const targetSkill = path.join(stateDir, "skills", "dench", "SKILL.md");
-    const workspaceSkill = path.join(stateDir, "workspace", "skills", "dench", "SKILL.md");
+    const targetSkill = path.join(stateDir, "skills", "crm", "SKILL.md");
+    const workspaceSkill = path.join(stateDir, "workspace", "skills", "crm", "SKILL.md");
     expect(existsSync(targetSkill)).toBe(false);
 
     await bootstrapCommand(
@@ -557,16 +557,16 @@ describe("bootstrapCommand always-onboard behavior", () => {
     expect(readFileSync(targetSkill, "utf-8")).toContain("name: database-crm-system");
   });
 
-  it("replaces existing managed Dench skill on bootstrap (keeps updates in sync)", async () => {
+  it("replaces existing managed CRM skill on bootstrap (keeps updates in sync)", async () => {
     const runtime: RuntimeEnv = {
       log: vi.fn(),
       error: vi.fn(),
       exit: vi.fn(),
     };
-    const targetDir = path.join(stateDir, "skills", "dench");
+    const targetDir = path.join(stateDir, "skills", "crm");
     const targetSkill = path.join(targetDir, "SKILL.md");
     mkdirSync(targetDir, { recursive: true });
-    writeFileSync(targetSkill, "name: dench\n# custom\n");
+    writeFileSync(targetSkill, "name: crm\n# custom\n");
 
     await bootstrapCommand(
       {
@@ -622,7 +622,7 @@ describe("bootstrapCommand always-onboard behavior", () => {
     expect(configuredWorkspace).not.toContain("workspace-ironclaw");
   });
 
-  it("keeps Dench in managed skills even when workspace path is custom", async () => {
+  it("keeps CRM in managed skills even when workspace path is custom", async () => {
     const runtime: RuntimeEnv = {
       log: vi.fn(),
       error: vi.fn(),
@@ -641,8 +641,8 @@ describe("bootstrapCommand always-onboard behavior", () => {
         gateway: { mode: "local" },
       }),
     );
-    const managedSkill = path.join(stateDir, "skills", "dench", "SKILL.md");
-    const workspaceSkill = path.join(customWorkspace, "skills", "dench", "SKILL.md");
+    const managedSkill = path.join(stateDir, "skills", "crm", "SKILL.md");
+    const workspaceSkill = path.join(customWorkspace, "skills", "crm", "SKILL.md");
 
     await bootstrapCommand(
       {
@@ -655,7 +655,7 @@ describe("bootstrapCommand always-onboard behavior", () => {
 
     expect(existsSync(managedSkill)).toBe(true);
     expect(existsSync(workspaceSkill)).toBe(false);
-    const managedWorkspaceSkill = path.join(stateDir, "workspace", "skills", "dench", "SKILL.md");
+    const managedWorkspaceSkill = path.join(stateDir, "workspace", "skills", "crm", "SKILL.md");
     expect(existsSync(managedWorkspaceSkill)).toBe(true);
   });
 

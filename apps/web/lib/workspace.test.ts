@@ -974,9 +974,9 @@ describe("workspace utilities", () => {
       expect(isSystemFile("sub/workspace_context.yaml")).toBe(false);
     });
 
-    it("returns true for IDENTITY.md at root", async () => {
+    it("returns false for IDENTITY.md (not a system file)", async () => {
       const { isSystemFile } = await importWorkspace();
-      expect(isSystemFile("IDENTITY.md")).toBe(true);
+      expect(isSystemFile("IDENTITY.md")).toBe(false);
     });
 
     it("returns false for IDENTITY.md in subdirectory", async () => {
