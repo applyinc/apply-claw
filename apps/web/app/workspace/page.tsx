@@ -31,6 +31,7 @@ import { ObjectFilterBar } from "../components/workspace/object-filter-bar";
 import { type FilterGroup, type SortRule, type SavedView, emptyFilterGroup, serializeFilters } from "@/lib/object-filters";
 import { UnicodeSpinner } from "../components/unicode-spinner";
 import { resolveActiveViewSyncDecision } from "./object-view-active-view";
+import { resetWorkspaceStateOnSwitch } from "./workspace-switch";
 
 // --- Types ---
 
@@ -358,7 +359,7 @@ function WorkspacePageInner() {
     tree, loading: treeLoading, exists: workspaceExists, refresh: refreshTree,
     reconnect: reconnectWorkspaceWatcher,
     browseDir, setBrowseDir, parentDir: browseParentDir, workspaceRoot, openclawDir,
-    activeProfile: workspaceProfile,
+    activeWorkspace: workspaceName,
     showHidden, setShowHidden,
   } = useWorkspaceWatcher();
 
@@ -534,16 +535,28 @@ function WorkspacePageInner() {
     setSidebarRefreshKey((k) => k + 1);
   }, []);
 
-  const handleProfileChanged = useCallback(() => {
-    setBrowseDir(null);
-    setActivePath(null);
-    setContent({ kind: "none" });
-    setChatSidebarPreview(null);
-    setShowChatSidebar(true);
-    reconnectWorkspaceWatcher();
-    refreshSessions();
-    void refreshContext();
-  }, [reconnectWorkspaceWatcher, refreshContext, refreshSessions, setBrowseDir]);
+  const handleWorkspaceChanged = useCallback(() => {
+    resetWorkspaceStateOnSwitch({
+      setBrowseDir,
+      setActivePath,
+      setContent,
+      setChatSidebarPreview,
+      setShowChatSidebar,
+      setActiveSessionId,
+      setActiveSubagentKey,
+      resetMainChat: () => {
+        void chatRef.current?.newSession();
+      },
+      replaceUrlToWorkspace: () => {
+        router.replace("/workspace", { scroll: false });
+      },
+      reconnectWorkspaceWatcher,
+      refreshSessions,
+      refreshContext: () => {
+        void refreshContext();
+      },
+    });
+  }, [reconnectWorkspaceWatcher, refreshContext, refreshSessions, router, setBrowseDir]);
 
   const handleDeleteSession = useCallback(
     async (sessionId: string) => {
@@ -1323,8 +1336,8 @@ function WorkspacePageInner() {
             onExternalDrop={handleSidebarExternalDrop}
             showHidden={showHidden}
             onToggleHidden={() => setShowHidden((v) => !v)}
-            activeProfile={workspaceProfile}
-            onProfileChanged={handleProfileChanged}
+            activeWorkspace={workspaceName}
+            onWorkspaceChanged={handleWorkspaceChanged}
             mobile
             onClose={() => setSidebarOpen(false)}
           />
@@ -1362,8 +1375,8 @@ function WorkspacePageInner() {
               onToggleHidden={() => setShowHidden((v) => !v)}
               width={leftSidebarWidth}
               onCollapse={() => setLeftSidebarCollapsed(true)}
-              activeProfile={workspaceProfile}
-              onProfileChanged={handleProfileChanged}
+              activeWorkspace={workspaceName}
+              onWorkspaceChanged={handleWorkspaceChanged}
             />
           </div>
           )}
