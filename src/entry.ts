@@ -97,11 +97,12 @@ if (!ensureExperimentalWarningSuppressed()) {
     process.exit(2);
   }
 
-  if (parsed.profile) {
-    applyCliProfileEnv({ profile: parsed.profile });
-    // Keep Commander and ad-hoc argv checks consistent.
-    process.argv = parsed.argv;
+  const appliedProfile = applyCliProfileEnv({ profile: parsed.profile ?? undefined });
+  if (appliedProfile.warning) {
+    console.warn(`[ironclaw] ${appliedProfile.warning}`);
   }
+  // Keep Commander and ad-hoc argv checks consistent.
+  process.argv = parsed.argv;
 
   import("./cli/run-main.js")
     .then(({ runCli }) => runCli(process.argv))

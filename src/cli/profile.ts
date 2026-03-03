@@ -3,6 +3,9 @@ import path from "node:path";
 import { resolveRequiredHomeDir } from "../infra/home-dir.js";
 import { isValidProfileName } from "./profile-utils.js";
 
+export const IRONCLAW_PROFILE = "ironclaw";
+const IRONCLAW_STATE_DIRNAME = ".openclaw-ironclaw";
+
 export type CliProfileParseResult =
   | { ok: true; profile: string | null; argv: string[] }
   | { ok: false; error: string };
@@ -30,7 +33,6 @@ export function parseCliProfileArgs(argv: string[]): CliProfileParseResult {
 
   const out: string[] = argv.slice(0, 2);
   let profile: string | null = null;
-  let sawDev = false;
   let sawCommand = false;
 
   const args = argv.slice(2);
@@ -46,18 +48,11 @@ export function parseCliProfileArgs(argv: string[]): CliProfileParseResult {
     }
 
     if (arg === "--dev") {
-      if (profile && profile !== "dev") {
-        return { ok: false, error: "Cannot combine --dev with --profile" };
-      }
-      sawDev = true;
       profile = "dev";
       continue;
     }
 
     if (arg === "--profile" || arg.startsWith("--profile=")) {
-      if (sawDev) {
-        return { ok: false, error: "Cannot combine --dev with --profile" };
-      }
       const next = args[i + 1];
       const { value, consumedNext } = takeValue(arg, next);
       if (consumedNext) {
@@ -89,39 +84,46 @@ export function parseCliProfileArgs(argv: string[]): CliProfileParseResult {
 }
 
 function resolveProfileStateDir(
-  profile: string,
   env: Record<string, string | undefined>,
   homedir: () => string,
 ): string {
-  const suffix = profile.toLowerCase() === "default" ? "" : `-${profile}`;
-  return path.join(resolveRequiredHomeDir(env as NodeJS.ProcessEnv, homedir), `.openclaw${suffix}`);
+  return path.join(
+    resolveRequiredHomeDir(env as NodeJS.ProcessEnv, homedir),
+    IRONCLAW_STATE_DIRNAME,
+  );
 }
 
 export function applyCliProfileEnv(params: {
-  profile: string;
+  profile?: string;
   env?: Record<string, string | undefined>;
   homedir?: () => string;
-}) {
+}): {
+  requestedProfile: string | null;
+  effectiveProfile: string;
+  stateDir: string;
+  warning?: string;
+} {
   const env = params.env ?? (process.env as Record<string, string | undefined>);
   const homedir = params.homedir ?? os.homedir;
-  const profile = params.profile.trim();
-  if (!profile) {
-    return;
-  }
+  const requestedProfile = (params.profile?.trim() || env.OPENCLAW_PROFILE?.trim() || null) ?? null;
+  const profile = IRONCLAW_PROFILE;
 
-  // Convenience only: fill defaults, never override explicit env values.
+  // Ironclaw always runs in the pinned profile/state path.
   env.OPENCLAW_PROFILE = profile;
 
-  const stateDir = env.OPENCLAW_STATE_DIR?.trim() || resolveProfileStateDir(profile, env, homedir);
-  if (!env.OPENCLAW_STATE_DIR?.trim()) {
-    env.OPENCLAW_STATE_DIR = stateDir;
-  }
+  const stateDir = resolveProfileStateDir(env, homedir);
+  env.OPENCLAW_STATE_DIR = stateDir;
+  env.OPENCLAW_CONFIG_PATH = path.join(stateDir, "openclaw.json");
 
-  if (!env.OPENCLAW_CONFIG_PATH?.trim()) {
-    env.OPENCLAW_CONFIG_PATH = path.join(stateDir, "openclaw.json");
-  }
+  const warning =
+    requestedProfile && requestedProfile !== profile
+      ? `Ignoring requested profile '${requestedProfile}'; Ironclaw always uses --profile ${IRONCLAW_PROFILE}.`
+      : undefined;
 
-  if (profile === "dev" && !env.OPENCLAW_GATEWAY_PORT?.trim()) {
-    env.OPENCLAW_GATEWAY_PORT = "19001";
-  }
+  return {
+    requestedProfile,
+    effectiveProfile: profile,
+    stateDir,
+    warning,
+  };
 }
