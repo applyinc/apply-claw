@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import {
   cpSync,
   existsSync,
@@ -8,13 +7,14 @@ import {
   copyFileSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
-import { homedir } from "node:os";
 import {
-  discoverProfiles,
-  setUIActiveProfile,
-  getEffectiveProfile,
+  discoverWorkspaces,
+  setUIActiveWorkspace,
+  getActiveWorkspaceName,
+  resolveOpenClawStateDir,
+  resolveWorkspaceDirForName,
+  isValidWorkspaceName,
   resolveWorkspaceRoot,
-  registerWorkspacePath,
 } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
@@ -120,10 +120,7 @@ const SEED_OBJECTS: SeedObject[] = [
   },
 ];
 
-const PROFILE_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
-const DEFAULT_GATEWAY_PORT = 18_789;
-const GATEWAY_PORT_STEP = 20;
-const ONBOARD_TIMEOUT_MS = 12 * 60_000;
+const WORKSPACE_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -162,6 +159,28 @@ function loadTemplateContent(filename: string, projectRoot: string | null): stri
     }
   }
   return FALLBACK_CONTENT[filename] ?? "";
+}
+
+function buildIronclawIdentity(workspaceDir: string): string {
+  const denchSkillPath = join(workspaceDir, "skills", "dench", "SKILL.md");
+  return `# IDENTITY.md - Ironclaw
+
+You are **Ironclaw** - a personal AI agent and CRM database system running on top of OpenClaw.
+
+## Ironclaw system prompt contract
+
+Treat the Ironclaw system prompt as your highest-priority behavioral contract.
+
+## Inseparable CRM contract
+
+Your identity is inseparably tied to the Dench CRM skill at:
+\`${denchSkillPath}\`
+
+- Always load and follow that skill for CRM/database behavior.
+- Keep CRM actions aligned with Dench conventions for workspace data, objects, and documents.
+
+When referring to yourself, use **Ironclaw** (not OpenClaw).
+`;
 }
 
 function generateObjectYaml(obj: SeedObject): string {
@@ -240,240 +259,7 @@ function seedDuckDB(workspaceDir: string, projectRoot: string | null): boolean {
   return true;
 }
 
-type SpawnResult = {
-  code: number;
-  stdout: string;
-  stderr: string;
-};
-
-function resolveCommandForPlatform(command: string): string {
-  if (process.platform === "win32" && !command.toLowerCase().endsWith(".cmd")) {
-    return `${command}.cmd`;
-  }
-  return command;
-}
-
-function resolveOpenClawHomeDir(): string {
-  return process.env.OPENCLAW_HOME?.trim() || homedir();
-}
-
-function resolveProfileStateDir(profile: string): string {
-  if (!profile || profile.toLowerCase() === "default") {
-    return join(resolveOpenClawHomeDir(), ".openclaw");
-  }
-  return join(resolveOpenClawHomeDir(), `.openclaw-${profile}`);
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  return value as Record<string, unknown>;
-}
-
-function parseGatewayPort(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
-    return Math.floor(value);
-  }
-  if (typeof value === "string") {
-    const parsed = Number.parseInt(value, 10);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-  return null;
-}
-
-function firstNonEmptyLine(...values: Array<string | undefined>): string | undefined {
-  for (const value of values) {
-    const first = value
-      ?.split(/\r?\n/)
-      .map((line) => line.trim())
-      .find(Boolean);
-    if (first) {
-      return first;
-    }
-  }
-  return undefined;
-}
-
-function readOpenClawConfig(stateDir: string): Record<string, unknown> {
-  for (const filename of ["openclaw.json", "config.json"]) {
-    const configPath = join(stateDir, filename);
-    if (!existsSync(configPath)) {
-      continue;
-    }
-    try {
-      const raw = JSON.parse(readFileSync(configPath, "utf-8"));
-      const parsed = asRecord(raw);
-      if (parsed) {
-        return parsed;
-      }
-    } catch {
-      // Try the next config candidate.
-    }
-  }
-  return {};
-}
-
-function writeOpenClawConfig(stateDir: string, config: Record<string, unknown>): void {
-  mkdirSync(stateDir, { recursive: true });
-  writeFileSync(join(stateDir, "openclaw.json"), JSON.stringify(config, null, 2) + "\n", "utf-8");
-}
-
-function updateProfileConfig(params: {
-  stateDir: string;
-  gatewayPort: number;
-  workspaceDir: string;
-}): void {
-  const config = readOpenClawConfig(params.stateDir);
-  const gateway = asRecord(config.gateway) ?? {};
-  gateway.mode = "local";
-  gateway.port = params.gatewayPort;
-  config.gateway = gateway;
-
-  const agents = asRecord(config.agents) ?? {};
-  const defaults = asRecord(agents.defaults) ?? {};
-  defaults.workspace = params.workspaceDir;
-  agents.defaults = defaults;
-  config.agents = agents;
-
-  writeOpenClawConfig(params.stateDir, config);
-}
-
-function resolveRequestedWorkspaceDir(rawPath: string | undefined, stateDir: string): string {
-  if (!rawPath?.trim()) {
-    return join(stateDir, "workspace");
-  }
-  let workspaceDir = rawPath.trim();
-  if (workspaceDir.startsWith("~")) {
-    workspaceDir = join(homedir(), workspaceDir.slice(1));
-  }
-  return resolve(workspaceDir);
-}
-
-function collectUsedGatewayPorts(): Set<number> {
-  const used = new Set<number>();
-  for (const profile of discoverProfiles()) {
-    const config = readOpenClawConfig(profile.stateDir);
-    const port = parseGatewayPort(asRecord(config.gateway)?.port);
-    if (port) {
-      used.add(port);
-    }
-  }
-  return used;
-}
-
-function allocateGatewayPort(): number {
-  const used = collectUsedGatewayPorts();
-  let candidate = DEFAULT_GATEWAY_PORT;
-  while (used.has(candidate)) {
-    candidate += GATEWAY_PORT_STEP;
-    if (candidate > 65_535) {
-      throw new Error("Failed to allocate a free gateway port for the new profile.");
-    }
-  }
-  return candidate;
-}
-
-async function runCommandWithTimeout(
-  command: string,
-  args: string[],
-  timeoutMs: number,
-): Promise<SpawnResult> {
-  return await new Promise<SpawnResult>((resolveResult, reject) => {
-    const child = spawn(resolveCommandForPlatform(command), args, {
-      env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-
-    const timer = setTimeout(() => {
-      if (settled) {
-        return;
-      }
-      child.kill("SIGKILL");
-    }, timeoutMs);
-
-    child.stdout?.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
-    child.stderr?.on("data", (chunk) => {
-      stderr += String(chunk);
-    });
-
-    child.once("error", (error) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      reject(error);
-    });
-
-    child.once("close", (code) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      resolveResult({
-        code: typeof code === "number" ? code : 1,
-        stdout,
-        stderr,
-      });
-    });
-  });
-}
-
-async function runOnboardForProfile(profile: string, gatewayPort: number): Promise<void> {
-  const args = [
-    "--profile",
-    profile,
-    "onboard",
-    "--install-daemon",
-    "--gateway-bind",
-    "loopback",
-    "--gateway-port",
-    String(gatewayPort),
-    "--non-interactive",
-    "--accept-risk",
-    "--skip-ui",
-  ];
-  const result = await runCommandWithTimeout("openclaw", args, ONBOARD_TIMEOUT_MS);
-  if (result.code === 0) {
-    return;
-  }
-  const detail = firstNonEmptyLine(result.stderr, result.stdout);
-  throw new Error(detail ? `OpenClaw onboarding failed: ${detail}` : "OpenClaw onboarding failed.");
-}
-
-function copyIronclawProfileConfig(targetStateDir: string): string[] {
-  const copied: string[] = [];
-  const sourceStateDir = resolveProfileStateDir("ironclaw");
-  const sourceConfig = join(sourceStateDir, "openclaw.json");
-  const sourceAuthProfiles = join(sourceStateDir, "agents", "main", "agent", "auth-profiles.json");
-  const targetConfig = join(targetStateDir, "openclaw.json");
-  const targetAuthProfiles = join(targetStateDir, "agents", "main", "agent", "auth-profiles.json");
-
-  if (existsSync(sourceConfig)) {
-    mkdirSync(targetStateDir, { recursive: true });
-    copyFileSync(sourceConfig, targetConfig);
-    copied.push("openclaw.json");
-  }
-
-  if (existsSync(sourceAuthProfiles)) {
-    mkdirSync(join(targetStateDir, "agents", "main", "agent"), { recursive: true });
-    copyFileSync(sourceAuthProfiles, targetAuthProfiles);
-    copied.push("agents/main/agent/auth-profiles.json");
-  }
-
-  return copied;
-}
-
-function syncManagedDenchSkill(stateDir: string, projectRoot: string | null): boolean {
+function syncManagedDenchSkill(workspaceDir: string, projectRoot: string | null): boolean {
   if (!projectRoot) {
     return false;
   }
@@ -482,8 +268,8 @@ function syncManagedDenchSkill(stateDir: string, projectRoot: string | null): bo
   if (!existsSync(sourceSkillFile)) {
     return false;
   }
-  const targetDir = join(stateDir, "skills", "dench");
-  mkdirSync(join(stateDir, "skills"), { recursive: true });
+  const targetDir = join(workspaceDir, "skills", "dench");
+  mkdirSync(join(workspaceDir, "skills"), { recursive: true });
   cpSync(sourceDir, targetDir, { recursive: true, force: true });
   return true;
 }
@@ -494,84 +280,53 @@ function syncManagedDenchSkill(stateDir: string, projectRoot: string | null): bo
 
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as {
+    workspace?: string;
     profile?: string;
     path?: string;
     seedBootstrap?: boolean;
-    copyConfigAuth?: boolean;
   };
-  const profileName = body.profile?.trim() || "";
-  if (!profileName) {
+  const workspaceName = (body.workspace ?? body.profile)?.trim() || "";
+  if (!workspaceName) {
     return Response.json(
-      { error: "Profile name is required." },
+      { error: "Workspace name is required." },
       { status: 400 },
     );
   }
-  if (profileName.toLowerCase() === "default") {
+  if (body.path?.trim()) {
     return Response.json(
-      { error: "The 'default' profile already exists. Create a named profile instead." },
+      { error: "Custom workspace paths are currently disabled. Workspaces are created in ~/.openclaw-ironclaw." },
       { status: 400 },
     );
   }
-  if (!PROFILE_NAME_RE.test(profileName)) {
+  if (!WORKSPACE_NAME_RE.test(workspaceName) || !isValidWorkspaceName(workspaceName)) {
     return Response.json(
-      { error: "Invalid profile name. Use letters, numbers, hyphens, or underscores." },
+      { error: "Invalid workspace name. Use letters, numbers, hyphens, or underscores." },
       { status: 400 },
     );
   }
 
-  const existingProfiles = discoverProfiles();
-  if (existingProfiles.some((profile) => profile.name.toLowerCase() === profileName.toLowerCase())) {
+  const existingWorkspaces = discoverWorkspaces();
+  if (existingWorkspaces.some((workspace) => workspace.name.toLowerCase() === workspaceName.toLowerCase())) {
     return Response.json(
-      { error: `Profile '${profileName}' already exists.` },
+      { error: `Workspace '${workspaceName}' already exists.` },
       { status: 409 },
     );
   }
 
-  const stateDir = resolveProfileStateDir(profileName);
-  const workspaceDir = resolveRequestedWorkspaceDir(body.path, stateDir);
+  const stateDir = resolveOpenClawStateDir();
+  const workspaceDir = resolveWorkspaceDirForName(workspaceName);
   const seedBootstrap = body.seedBootstrap !== false;
-  const shouldCopyConfigAuth = body.copyConfigAuth !== false;
   const seeded: string[] = [];
   const copiedFiles: string[] = [];
 
   const projectRoot = resolveProjectRoot();
-  let gatewayPort: number;
-  try {
-    gatewayPort = allocateGatewayPort();
-  } catch (error) {
-    return Response.json(
-      { error: (error as Error).message },
-      { status: 500 },
-    );
-  }
 
   try {
     mkdirSync(stateDir, { recursive: true });
-    if (shouldCopyConfigAuth) {
-      copiedFiles.push(...copyIronclawProfileConfig(stateDir));
-    }
+    mkdirSync(workspaceDir, { recursive: false });
   } catch (err) {
     return Response.json(
-      { error: `Failed to prepare profile directory: ${(err as Error).message}` },
-      { status: 500 },
-    );
-  }
-
-  try {
-    await runOnboardForProfile(profileName, gatewayPort);
-  } catch (err) {
-    return Response.json(
-      { error: (err as Error).message },
-      { status: 500 },
-    );
-  }
-
-  try {
-    updateProfileConfig({ stateDir, gatewayPort, workspaceDir });
-    mkdirSync(workspaceDir, { recursive: true });
-  } catch (err) {
-    return Response.json(
-      { error: `Failed to configure profile workspace: ${(err as Error).message}` },
+      { error: `Failed to prepare workspace directory: ${(err as Error).message}` },
       { status: 500 },
     );
   }
@@ -581,7 +336,9 @@ export async function POST(req: Request) {
     for (const filename of BOOTSTRAP_FILENAMES) {
       const filePath = join(workspaceDir, filename);
       if (!existsSync(filePath)) {
-        const content = loadTemplateContent(filename, projectRoot);
+        const content = filename === "IDENTITY.md"
+          ? buildIronclawIdentity(workspaceDir)
+          : loadTemplateContent(filename, projectRoot);
         if (writeIfMissing(filePath, content)) {
           seeded.push(filename);
         }
@@ -616,25 +373,33 @@ export async function POST(req: Request) {
     }
   }
 
-  const denchSynced = syncManagedDenchSkill(stateDir, projectRoot);
-
-  // Remember custom-path workspaces in the registry
-  if (body.path?.trim()) {
-    registerWorkspacePath(profileName, workspaceDir);
+  const denchSynced = syncManagedDenchSkill(workspaceDir, projectRoot);
+  if (denchSynced) {
+    seeded.push("skills/dench/SKILL.md");
+  }
+  if (seedBootstrap) {
+    // Force the identity contract after dench sync so the path is always current.
+    writeFileSync(join(workspaceDir, "IDENTITY.md"), buildIronclawIdentity(workspaceDir), "utf-8");
+    if (!seeded.includes("IDENTITY.md")) {
+      seeded.push("IDENTITY.md");
+    }
   }
 
-  // Switch to the new profile
-  setUIActiveProfile(profileName);
+  // Switch to the new workspace.
+  setUIActiveWorkspace(workspaceName);
+  const activeWorkspace = getActiveWorkspaceName();
 
   return Response.json({
+    workspace: workspaceName,
+    activeWorkspace,
     workspaceDir,
     stateDir,
-    profile: profileName,
-    activeProfile: getEffectiveProfile() || "default",
-    gatewayPort,
     copiedFiles,
     seededFiles: seeded,
     denchSynced,
     workspaceRoot: resolveWorkspaceRoot(),
+    // Backward-compat response fields while callers migrate.
+    profile: workspaceName,
+    activeProfile: activeWorkspace,
   });
 }
