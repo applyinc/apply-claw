@@ -105,3 +105,5 @@ package-lock.json
 apps/ios/LocalSigning.xcconfig
 # Generated protocol schema (produced via pnpm protocol:gen)
 dist/protocol.schema.json
+
+.cursor/skills/

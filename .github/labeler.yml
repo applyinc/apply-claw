@@ -212,6 +212,10 @@
   - changed-files:
       - any-glob-to-any-file:
           - "extensions/google-gemini-cli-auth/**"
+"extensions: ironclaw-auth":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/ironclaw-auth/**"
 "extensions: llm-task":
   - changed-files:
       - any-glob-to-any-file:
