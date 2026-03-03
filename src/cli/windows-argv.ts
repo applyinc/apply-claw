@@ -1,8 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 
-export function normalizeWindowsArgv(argv: string[]): string[] {
-  if (process.platform !== "win32") {
+export function normalizeWindowsArgv(
+  argv: string[],
+  opts?: {
+    platform?: NodeJS.Platform;
+    execPath?: string;
+    existsSync?: (value: string) => boolean;
+  },
+): string[] {
+  const platform = opts?.platform ?? process.platform;
+  if (platform !== "win32") {
     return argv;
   }
   if (argv.length < 2) {
@@ -27,7 +35,8 @@ export function normalizeWindowsArgv(argv: string[]): string[] {
   const normalizeCandidate = (value: string): string =>
     normalizeArg(value).replace(/^\\\\\\?\\/, "");
 
-  const execPath = normalizeCandidate(process.execPath);
+  const execPath = normalizeCandidate(opts?.execPath ?? process.execPath);
+  const existsSync = opts?.existsSync ?? fs.existsSync;
   const execPathLower = execPath.toLowerCase();
   const execBase = path.basename(execPath).toLowerCase();
   const isExecPath = (value: string | undefined): boolean => {
@@ -45,7 +54,7 @@ export function normalizeWindowsArgv(argv: string[]): string[] {
       lower.endsWith("\\node.exe") ||
       lower.endsWith("/node.exe") ||
       lower.includes("node.exe") ||
-      (path.basename(lower) === "node.exe" && fs.existsSync(normalized))
+      (path.basename(lower) === "node.exe" && existsSync(normalized))
     );
   };
 
