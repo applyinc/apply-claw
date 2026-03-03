@@ -1,0 +1,9 @@
+{
+  "id": "ironclaw-auth",
+  "providers": ["ironclaw"],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
