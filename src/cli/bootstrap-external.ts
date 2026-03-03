@@ -1,5 +1,5 @@
 import { spawn, type StdioOptions } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readFileSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -978,29 +978,6 @@ function resolveModelProvider(stateDir: string): string | undefined {
 }
 
 /**
- * Sync bundled Dench skill into the active workspace.
- */
-function syncBundledDenchSkill(workspaceDir: string): {
-  mode: "installed" | "updated";
-  targetDir: string;
-} {
-  const targetDir = path.join(workspaceDir, "skills", "dench");
-  const targetSkillFile = path.join(targetDir, "SKILL.md");
-  const mode: "installed" | "updated" = existsSync(targetSkillFile) ? "updated" : "installed";
-  const sourceDir = path.join(resolveCliPackageRoot(), "skills", "dench");
-  const sourceSkillFile = path.join(sourceDir, "SKILL.md");
-  if (!existsSync(sourceSkillFile)) {
-    throw new Error(
-      `Bundled Dench skill not found at ${sourceDir}. Reinstall ironclaw and rerun bootstrap.`,
-    );
-  }
-  mkdirSync(path.dirname(targetDir), { recursive: true });
-  // Always replace with the bundled version so ironclaw updates refresh Dench automatically.
-  cpSync(sourceDir, targetDir, { recursive: true, force: true });
-  return { mode, targetDir };
-}
-
-/**
  * Check if the agent auth store has at least one key for the given provider.
  */
 export function checkAgentAuth(
@@ -1366,7 +1343,6 @@ export async function bootstrapCommand(
     });
   }
 
-  const denchInstall = syncBundledDenchSkill(workspaceDir);
   const workspaceSeed = seedWorkspaceFromAssets({
     workspaceDir,
     packageRoot: resolveCliPackageRoot(),
@@ -1450,7 +1426,6 @@ export async function bootstrapCommand(
       );
     }
 
-    runtime.log(theme.muted(`Dench skill ${denchInstall.mode}: ${denchInstall.targetDir}`));
     runtime.log(theme.muted(`Workspace seed: ${describeWorkspaceSeedResult(workspaceSeed)}`));
     if (gatewayAutoFix?.attempted) {
       runtime.log(
