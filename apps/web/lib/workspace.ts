@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { execSync, exec } from "node:child_process";
 import { promisify } from "node:util";
 import { join, resolve, normalize, relative } from "node:path";
@@ -8,23 +8,19 @@ import { normalizeFilterGroup, type SavedView } from "./object-filters";
 
 const execAsync = promisify(exec);
 
-// ---------------------------------------------------------------------------
-// UI profile override — allows switching profiles at runtime without env vars.
-// The active profile is held in-memory for immediate effect and persisted to
-// ~/.openclaw/.ironclaw-ui-state.json so it survives server restarts.
-// ---------------------------------------------------------------------------
-
 const UI_STATE_FILENAME = ".ironclaw-ui-state.json";
-const LEGACY_STATE_DIRNAME = ".openclaw";
-const migratedProfiles = new Set<string>();
+const FIXED_STATE_DIRNAME = ".openclaw-ironclaw";
+const WORKSPACE_PREFIX = "workspace-";
+const ROOT_WORKSPACE_DIRNAME = "workspace";
+const WORKSPACE_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
+const DEFAULT_WORKSPACE_NAME = "default";
+const IRONCLAW_PROFILE = "ironclaw";
 
-/** In-memory override; takes precedence over the persisted file. */
-let _uiActiveProfile: string | null | undefined;
+/** In-memory override; takes precedence over persisted state. */
+let _uiActiveWorkspace: string | null | undefined;
 
 type UIState = {
-  activeProfile?: string | null;
-  /** Maps profile names to absolute workspace paths for workspaces outside ~/.openclaw/. */
-  workspaceRegistry?: Record<string, string>;
+  activeWorkspace?: string | null;
 };
 
 function resolveOpenClawHomeDir(): string {
@@ -42,92 +38,53 @@ function expandUserPath(input: string): string {
   return trimmed;
 }
 
-function normalizeProfileName(profile: string | null | undefined): string | null {
-  const normalized = profile?.trim() || null;
-  if (!normalized || normalized.toLowerCase() === "default") {
+function normalizeWorkspaceName(name: string | null | undefined): string | null {
+  const normalized = name?.trim() || null;
+  if (!normalized) {
+    return null;
+  }
+  if (!WORKSPACE_NAME_RE.test(normalized)) {
     return null;
   }
   return normalized;
 }
 
-function resolveLegacySharedStateDir(): string {
-  const override = process.env.OPENCLAW_STATE_DIR?.trim();
-  if (override) {
-    return expandUserPath(override);
-  }
-  return join(resolveOpenClawHomeDir(), LEGACY_STATE_DIRNAME);
+function workspaceDirName(workspaceName: string): string {
+  return `${WORKSPACE_PREFIX}${workspaceName}`;
 }
 
-function resolveProfileStateDir(profile: string | null | undefined): string {
-  const override = process.env.OPENCLAW_STATE_DIR?.trim();
-  if (override) {
-    return expandUserPath(override);
+function workspaceNameFromDirName(dirName: string): string | null {
+  if (dirName === ROOT_WORKSPACE_DIRNAME) {
+    return DEFAULT_WORKSPACE_NAME;
   }
-  const normalizedProfile = normalizeProfileName(profile);
-  if (!normalizedProfile) {
-    return join(resolveOpenClawHomeDir(), LEGACY_STATE_DIRNAME);
+  if (!dirName.startsWith(WORKSPACE_PREFIX)) {
+    return null;
   }
-  return join(resolveOpenClawHomeDir(), `.openclaw-${normalizedProfile}`);
+  return normalizeWorkspaceName(dirName.slice(WORKSPACE_PREFIX.length));
 }
 
-function moveDirIfMissingTarget(fromDir: string, toDir: string): boolean {
-  if (!existsSync(fromDir) || existsSync(toDir)) {
-    return false;
-  }
-  const parent = join(toDir, "..");
-  if (!existsSync(parent)) {
-    mkdirSync(parent, { recursive: true });
-  }
-  try {
-    renameSync(fromDir, toDir);
-    return true;
-  } catch {
-    return false;
-  }
+function stateDirPath(): string {
+  return join(resolveOpenClawHomeDir(), FIXED_STATE_DIRNAME);
 }
 
-function migrateLegacyProfileStorage(profile: string | null): void {
-  const normalizedProfile = normalizeProfileName(profile);
-  if (!normalizedProfile || process.env.OPENCLAW_STATE_DIR?.trim()) {
-    return;
+function resolveWorkspaceDir(workspaceName: string): string {
+  const stateDir = resolveOpenClawStateDir();
+  if (workspaceName === DEFAULT_WORKSPACE_NAME) {
+    const rootWorkspaceDir = join(stateDir, ROOT_WORKSPACE_DIRNAME);
+    if (existsSync(rootWorkspaceDir)) {
+      return rootWorkspaceDir;
+    }
+    const prefixedWorkspaceDir = join(stateDir, workspaceDirName(workspaceName));
+    if (existsSync(prefixedWorkspaceDir)) {
+      return prefixedWorkspaceDir;
+    }
+    return rootWorkspaceDir;
   }
-  const key = normalizedProfile.toLowerCase();
-  if (migratedProfiles.has(key)) {
-    return;
-  }
-  migratedProfiles.add(key);
-
-  const legacyStateDir = resolveLegacySharedStateDir();
-  const targetStateDir = resolveProfileStateDir(normalizedProfile);
-  const movedWorkspace = moveDirIfMissingTarget(
-    join(legacyStateDir, `workspace-${normalizedProfile}`),
-    join(targetStateDir, "workspace"),
-  );
-  const movedWebChat = moveDirIfMissingTarget(
-    join(legacyStateDir, `web-chat-${normalizedProfile}`),
-    join(targetStateDir, "web-chat"),
-  );
-  if (!movedWorkspace && !movedWebChat) {
-    return;
-  }
-
-  const state = readUIState();
-  const existing = state.workspaceRegistry?.[normalizedProfile];
-  if (
-    existing &&
-    resolve(existing) === resolve(join(legacyStateDir, `workspace-${normalizedProfile}`))
-  ) {
-    const nextRegistry = { ...state.workspaceRegistry };
-    nextRegistry[normalizedProfile] = join(targetStateDir, "workspace");
-    writeUIState({
-      ...state,
-      workspaceRegistry: nextRegistry,
-    });
-  }
+  return join(stateDir, workspaceDirName(workspaceName));
 }
 
 function uiStatePath(): string {
-  return join(resolveOpenClawHomeDir(), LEGACY_STATE_DIRNAME, UI_STATE_FILENAME);
+  return join(resolveOpenClawStateDir(), UI_STATE_FILENAME);
 }
 
 function readUIState(): UIState {
@@ -142,60 +99,89 @@ function readUIState(): UIState {
 export function writeUIState(state: UIState): void {
   const p = uiStatePath();
   const dir = join(p, "..");
-  if (!existsSync(dir)) {mkdirSync(dir, { recursive: true });}
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
   writeFileSync(p, JSON.stringify(state, null, 2) + "\n");
 }
 
-/** Get the effective profile: env var > in-memory override > persisted file. */
-export function getEffectiveProfile(): string | null {
-  const envProfile = process.env.OPENCLAW_PROFILE?.trim();
-  if (envProfile) {return envProfile;}
-  if (_uiActiveProfile !== undefined) {return _uiActiveProfile;}
-  const persisted = readUIState().activeProfile;
-  return persisted?.trim() || null;
+function workspaceNameFromPath(inputPath: string | null | undefined): string | null {
+  if (!inputPath) {
+    return null;
+  }
+  const resolvedPath = resolve(expandUserPath(inputPath));
+  const stateRoot = resolve(resolveOpenClawStateDir());
+  const rel = relative(stateRoot, resolvedPath);
+  if (!rel || rel.startsWith("..")) {
+    return null;
+  }
+  const top = rel.split(/[\\/]/)[0];
+  if (!top) {
+    return null;
+  }
+  return workspaceNameFromDirName(top);
 }
 
-/** Set the UI-level profile override (in-memory + persisted). */
-export function setUIActiveProfile(profile: string | null): void {
-  const normalized = profile?.trim() || null;
-  _uiActiveProfile = normalized;
+function scanWorkspaceNames(stateDir: string): string[] {
+  try {
+    const names = readdirSync(stateDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => workspaceNameFromDirName(entry.name))
+      .filter((name): name is string => Boolean(name));
+    return [...new Set(names)].toSorted((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Active workspace resolution precedence:
+ * 1) OPENCLAW_WORKSPACE env path (if it points at workspace or workspace-<name>)
+ * 2) in-memory UI override
+ * 3) persisted UI state
+ */
+export function getActiveWorkspaceName(): string | null {
+  const stateDir = resolveOpenClawStateDir();
+  const discoveredNames = scanWorkspaceNames(stateDir);
+  const hasDiscoveredWorkspace = (name: string | null | undefined): name is string =>
+    Boolean(name && discoveredNames.includes(name));
+
+  const envWorkspace = process.env.OPENCLAW_WORKSPACE?.trim();
+  const envWorkspaceName = workspaceNameFromPath(envWorkspace);
+  if (hasDiscoveredWorkspace(envWorkspaceName)) {
+    return envWorkspaceName;
+  }
+
+  if (_uiActiveWorkspace === null) {
+    return null;
+  }
+  if (hasDiscoveredWorkspace(_uiActiveWorkspace)) {
+    return _uiActiveWorkspace;
+  }
+
+  const persisted = normalizeWorkspaceName(readUIState().activeWorkspace);
+  if (hasDiscoveredWorkspace(persisted)) {
+    return persisted;
+  }
+  return discoveredNames[0] ?? null;
+}
+
+export function setUIActiveWorkspace(workspaceName: string | null): void {
+  const normalized = normalizeWorkspaceName(workspaceName);
+  _uiActiveWorkspace = normalized;
   const existing = readUIState();
-  writeUIState({ ...existing, activeProfile: normalized });
+  writeUIState({ ...existing, activeWorkspace: normalized });
 }
 
-/** Reset the in-memory override (re-reads from file on next call). */
-export function clearUIActiveProfileCache(): void {
-  _uiActiveProfile = undefined;
+export function clearUIActiveWorkspaceCache(): void {
+  _uiActiveWorkspace = undefined;
 }
 
-// ---------------------------------------------------------------------------
-// Workspace registry — remembers workspaces created outside ~/.openclaw/.
-// ---------------------------------------------------------------------------
-
-/** Read the full workspace registry (profile → absolute path). */
-export function getWorkspaceRegistry(): Record<string, string> {
-  return readUIState().workspaceRegistry ?? {};
+export function resolveOpenClawStateDir(): string {
+  return stateDirPath();
 }
 
-/** Look up a single profile's registered workspace path. */
-export function getRegisteredWorkspacePath(profile: string | null): string | null {
-  if (!profile) {return null;}
-  return getWorkspaceRegistry()[profile] ?? null;
-}
-
-/** Persist a profile → workspace-path mapping in the registry. */
-export function registerWorkspacePath(profile: string, absolutePath: string): void {
-  const state = readUIState();
-  const registry = state.workspaceRegistry ?? {};
-  registry[profile] = absolutePath;
-  writeUIState({ ...state, workspaceRegistry: registry });
-}
-
-// ---------------------------------------------------------------------------
-// Profile discovery — scans the filesystem for all profiles/workspaces.
-// ---------------------------------------------------------------------------
-
-export type DiscoveredProfile = {
+export type DiscoveredWorkspace = {
   name: string;
   stateDir: string;
   workspaceDir: string | null;
@@ -203,143 +189,106 @@ export type DiscoveredProfile = {
   hasConfig: boolean;
 };
 
-/**
- * Discover all profiles by scanning profile-scoped state directories
- * (e.g. ~/.openclaw-ironclaw) and merging persisted registry entries.
- */
-export function discoverProfiles(): DiscoveredProfile[] {
-  const home = resolveOpenClawHomeDir();
-  const defaultStateDir = resolveProfileStateDir(null);
-  const activeProfile = getEffectiveProfile();
-  const activeNormalized = normalizeProfileName(activeProfile);
-  const profiles: DiscoveredProfile[] = [];
-  const seen = new Set<string>();
+export function discoverWorkspaces(): DiscoveredWorkspace[] {
+  const stateDir = resolveOpenClawStateDir();
+  const activeWorkspace = getActiveWorkspaceName();
+  const discovered: DiscoveredWorkspace[] = [];
 
-  // Default profile
-  const defaultWs = join(defaultStateDir, "workspace");
-  profiles.push({
-    name: "default",
-    stateDir: defaultStateDir,
-    workspaceDir: existsSync(defaultWs) ? defaultWs : null,
-    isActive: !activeNormalized,
-    hasConfig: existsSync(join(defaultStateDir, "openclaw.json")),
-  });
-  seen.add("default");
-
-  // Scan for profile-scoped state dirs: ~/.openclaw-<profile>
-  try {
-    const entries = readdirSync(home, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) {
-        continue;
-      }
-      const match = entry.name.match(/^\.openclaw-(.+)$/);
-      if (!match || !match[1]) {
-        continue;
-      }
-      const profileName = match[1];
-      if (seen.has(profileName)) {
-        continue;
-      }
-      migrateLegacyProfileStorage(profileName);
-      const stateDir = resolveProfileStateDir(profileName);
-      const wsDir = join(stateDir, "workspace");
-      profiles.push({
-        name: profileName,
-        stateDir,
-        workspaceDir: existsSync(wsDir) ? wsDir : null,
-        isActive: activeNormalized === profileName,
-        hasConfig: existsSync(join(stateDir, "openclaw.json")),
-      });
-      seen.add(profileName);
-    }
-  } catch {
-    // dir unreadable
-  }
-
-  // Merge workspaces registered via custom paths (outside profile state dirs).
-  const registry = getWorkspaceRegistry();
-  for (const [rawProfileName, wsPath] of Object.entries(registry)) {
-    const normalized = normalizeProfileName(rawProfileName);
-    const profileName = normalized ?? "default";
-    if (normalized) {
-      migrateLegacyProfileStorage(normalized);
-    }
-    if (seen.has(profileName)) {
-      const existing = profiles.find((p) => p.name === profileName);
-      if (existing && !existing.workspaceDir && existsSync(wsPath)) {
-        existing.workspaceDir = wsPath;
-      }
-      continue;
-    }
-    seen.add(profileName);
-    const stateDir = resolveProfileStateDir(normalized);
-    profiles.push({
-      name: profileName,
+  for (const workspaceName of scanWorkspaceNames(stateDir)) {
+    const workspaceDir = resolveWorkspaceDir(workspaceName);
+    discovered.push({
+      name: workspaceName,
       stateDir,
-      workspaceDir: existsSync(wsPath) ? wsPath : null,
-      isActive: normalized ? activeNormalized === normalized : !activeNormalized,
+      workspaceDir: existsSync(workspaceDir) ? workspaceDir : null,
+      isActive: activeWorkspace === workspaceName,
       hasConfig: existsSync(join(stateDir, "openclaw.json")),
     });
   }
 
-  return profiles;
-}
+  discovered.sort((a, b) => a.name.localeCompare(b.name));
 
-// ---------------------------------------------------------------------------
-// State directory & workspace resolution (profile-aware)
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve the OpenClaw state directory (base dir for config, sessions, agents, etc.).
- * Mirrors CLI profile semantics:
- * - default profile: ~/.openclaw
- * - named profile:   ~/.openclaw-<profile>
- * - OPENCLAW_STATE_DIR override wins for all profiles
- */
-export function resolveOpenClawStateDir(profileOverride?: string | null): string {
-  const profile = normalizeProfileName(profileOverride ?? getEffectiveProfile());
-  migrateLegacyProfileStorage(profile);
-  return resolveProfileStateDir(profile);
-}
-
-/**
- * Resolve the web-chat sessions directory, scoped to the active profile.
- * Always stores sessions at <profileStateDir>/web-chat.
- */
-export function resolveWebChatDir(): string {
-  const stateDir = resolveOpenClawStateDir();
-  return join(stateDir, "web-chat");
-}
-
-/**
- * Resolve the workspace directory, checking in order:
- * 1. OPENCLAW_WORKSPACE env var
- * 2. Registered profile-specific custom path
- * 3. <profileStateDir>/workspace
- * 4. Legacy fallback: ~/.openclaw/workspace-<profile> (non-default only)
- */
-export function resolveWorkspaceRoot(): string | null {
-  const profile = getEffectiveProfile();
-  migrateLegacyProfileStorage(profile);
-  const normalizedProfile = normalizeProfileName(profile);
-  const stateDir = resolveProfileStateDir(profile);
-  const registryPath = getRegisteredWorkspacePath(profile);
-  const legacyWorkspaceFallback =
-    normalizedProfile
-      ? join(resolveLegacySharedStateDir(), `workspace-${normalizedProfile}`)
-      : null;
-  const candidates = [
-    process.env.OPENCLAW_WORKSPACE,
-    registryPath,
-    join(stateDir, "workspace"),
-    legacyWorkspaceFallback,
-  ].filter(Boolean) as string[];
-
-  for (const dir of candidates) {
-    if (existsSync(dir)) {return dir;}
+  if (!discovered.some((item) => item.isActive) && discovered.length > 0) {
+    discovered[0] = {
+      ...discovered[0],
+      isActive: true,
+    };
   }
+
+  return discovered;
+}
+
+// Compatibility shims while callers migrate away from profile semantics.
+export type DiscoveredProfile = DiscoveredWorkspace;
+export function discoverProfiles(): DiscoveredProfile[] {
+  return discoverWorkspaces();
+}
+export function getEffectiveProfile(): string {
+  return IRONCLAW_PROFILE;
+}
+export function setUIActiveProfile(profile: string | null): void {
+  setUIActiveWorkspace(normalizeWorkspaceName(profile));
+}
+export function clearUIActiveProfileCache(): void {
+  clearUIActiveWorkspaceCache();
+}
+export function getWorkspaceRegistry(): Record<string, string> {
+  return {};
+}
+export function getRegisteredWorkspacePath(_profile: string | null): string | null {
   return null;
+}
+export function registerWorkspacePath(_profile: string, _absolutePath: string): void {
+  // No-op: workspace paths are discovered from managed dirs:
+  // ~/.openclaw-ironclaw/workspace (default) and ~/.openclaw-ironclaw/workspace-<name>.
+}
+
+export function isValidWorkspaceName(name: string): boolean {
+  return normalizeWorkspaceName(name) !== null;
+}
+
+export function resolveWorkspaceDirForName(name: string): string {
+  const normalized = normalizeWorkspaceName(name);
+  if (!normalized) {
+    throw new Error("Invalid workspace name.");
+  }
+  return resolveWorkspaceDir(normalized);
+}
+
+export function resolveWorkspaceRoot(): string | null {
+  const explicitWorkspace = process.env.OPENCLAW_WORKSPACE?.trim();
+  const explicitWorkspaceName = workspaceNameFromPath(explicitWorkspace);
+  if (explicitWorkspaceName) {
+    const managedWorkspaceDir = resolveWorkspaceDir(explicitWorkspaceName);
+    if (existsSync(managedWorkspaceDir)) {
+      return managedWorkspaceDir;
+    }
+  }
+
+  const activeWorkspace = getActiveWorkspaceName();
+  if (activeWorkspace) {
+    const activeDir = resolveWorkspaceDir(activeWorkspace);
+    if (existsSync(activeDir)) {
+      return activeDir;
+    }
+  }
+
+  const discovered = discoverWorkspaces();
+  return discovered.find((workspace) => workspace.isActive)?.workspaceDir ?? null;
+}
+
+export function resolveWebChatDir(): string {
+  const workspaceRoot = resolveWorkspaceRoot();
+  if (workspaceRoot) {
+    return join(workspaceRoot, ".openclaw", "web-chat");
+  }
+
+  const activeWorkspace = getActiveWorkspaceName();
+  if (activeWorkspace) {
+    return join(resolveWorkspaceDir(activeWorkspace), ".openclaw", "web-chat");
+  }
+
+  // Fallback for first-run flows before any workspace is selected/created.
+  return join(resolveWorkspaceDir(DEFAULT_WORKSPACE_NAME), ".openclaw", "web-chat");
 }
 
 /** @deprecated Use `resolveWorkspaceRoot` instead. */
