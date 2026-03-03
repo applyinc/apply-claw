@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type StdioOptions } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,12 +10,14 @@ import { resolveRequiredHomeDir } from "../infra/home-dir.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
 import { stylePromptMessage } from "../terminal/prompt-style.js";
 import { theme } from "../terminal/theme.js";
-import { isValidProfileName } from "./profile-utils.js";
 import { applyCliProfileEnv } from "./profile.js";
 import { seedWorkspaceFromAssets, type WorkspaceSeedResult } from "./workspace-seed.js";
 
 const DEFAULT_IRONCLAW_PROFILE = "ironclaw";
+const IRONCLAW_STATE_DIRNAME = ".openclaw-ironclaw";
 const DEFAULT_GATEWAY_PORT = 18789;
+const IRONCLAW_GATEWAY_PORT_START = 19001;
+const MAX_PORT_SCAN_ATTEMPTS = 100;
 const DEFAULT_WEB_APP_PORT = 3100;
 const WEB_APP_PROBE_ATTEMPTS = 20;
 const WEB_APP_PROBE_DELAY_MS = 750;
@@ -150,7 +152,7 @@ async function runCommandWithTimeout(
   if (!command) {
     return { code: 1, stdout: "", stderr: "missing command" };
   }
-  const stdio = options.ioMode === "inherit" ? "inherit" : (["ignore", "pipe", "pipe"] as const);
+  const stdio: StdioOptions = options.ioMode === "inherit" ? "inherit" : ["ignore", "pipe", "pipe"];
   return await new Promise<SpawnResult>((resolve, reject) => {
     const child = spawn(resolveCommandForPlatform(command), args, {
       cwd: options.cwd,
@@ -168,13 +170,13 @@ async function runCommandWithTimeout(
       child.kill("SIGKILL");
     }, options.timeoutMs);
 
-    child.stdout?.on("data", (chunk) => {
+    child.stdout?.on("data", (chunk: Buffer | string) => {
       stdout += String(chunk);
     });
-    child.stderr?.on("data", (chunk) => {
+    child.stderr?.on("data", (chunk: Buffer | string) => {
       stderr += String(chunk);
     });
-    child.once("error", (error) => {
+    child.once("error", (error: Error) => {
       if (settled) {
         return;
       }
@@ -182,7 +184,7 @@ async function runCommandWithTimeout(
       clearTimeout(timer);
       reject(error);
     });
-    child.once("close", (code) => {
+    child.once("close", (code: number | null) => {
       if (settled) {
         return;
       }
@@ -210,6 +212,47 @@ function parseOptionalPort(value: string | number | undefined): number | undefin
 
 async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+import { createConnection } from "node:net";
+
+function isPortAvailable(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createConnection({ port, host: "127.0.0.1" }, () => {
+      // Connection succeeded, port is in use
+      server.end();
+      resolve(false);
+    });
+    server.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "ECONNREFUSED") {
+        // Port is available (nothing listening)
+        resolve(true);
+      } else if (err.code === "EADDRNOTAVAIL") {
+        // Address not available
+        resolve(false);
+      } else {
+        // Other errors, assume port is not available
+        resolve(false);
+      }
+    });
+    server.setTimeout(1000, () => {
+      server.destroy();
+      resolve(false);
+    });
+  });
+}
+
+async function findAvailablePort(
+  startPort: number,
+  maxAttempts: number,
+): Promise<number | undefined> {
+  for (let i = 0; i < maxAttempts; i++) {
+    const port = startPort + i;
+    if (await isPortAvailable(port)) {
+      return port;
+    }
+  }
+  return undefined;
 }
 
 function normalizeBootstrapRolloutStage(raw: string | undefined): BootstrapRolloutStage {
@@ -257,27 +300,9 @@ function firstNonEmptyLine(...values: Array<string | undefined>): string | undef
 }
 
 function resolveProfileStateDir(profile: string, env: NodeJS.ProcessEnv = process.env): string {
-  const explicitStateDir = env.OPENCLAW_STATE_DIR?.trim();
-  if (explicitStateDir) {
-    return path.resolve(explicitStateDir);
-  }
+  void profile;
   const home = resolveRequiredHomeDir(env, os.homedir);
-  if (!profile || profile === "default") {
-    return path.join(home, ".openclaw");
-  }
-  return path.join(home, `.openclaw-${profile}`);
-}
-
-function resolveBootstrapProfile(
-  opts: BootstrapOptions,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  const explicitProfile = opts.profile?.trim() || env.OPENCLAW_PROFILE?.trim();
-  const profile = explicitProfile || DEFAULT_IRONCLAW_PROFILE;
-  if (!isValidProfileName(profile)) {
-    throw new Error('Invalid --profile (use letters, numbers, "_", "-" only)');
-  }
-  return profile;
+  return path.join(home, IRONCLAW_STATE_DIRNAME);
 }
 
 function resolveGatewayLaunchAgentLabel(profile: string): string {
@@ -303,6 +328,19 @@ async function ensureGatewayModeLocal(openclawCommand: string, profile: string):
     args: ["--profile", profile, "config", "set", "gateway.mode", "local"],
     timeoutMs: 10_000,
     errorMessage: "Failed to set gateway.mode=local.",
+  });
+}
+
+async function ensureGatewayPort(
+  openclawCommand: string,
+  profile: string,
+  gatewayPort: number,
+): Promise<void> {
+  await runOpenClawOrThrow({
+    openclawCommand,
+    args: ["--profile", profile, "config", "set", "gateway.port", String(gatewayPort)],
+    timeoutMs: 10_000,
+    errorMessage: `Failed to set gateway.port=${gatewayPort}.`,
   });
 }
 
@@ -360,7 +398,7 @@ function resolveCliPackageRoot(): string {
  * Spawn the pre-built standalone Next.js server as a detached background
  * process if it isn't already running on the target port.
  */
-function startWebAppIfNeeded(port: number, stateDir: string): void {
+function startWebAppIfNeeded(port: number, stateDir: string, gatewayPort: number): void {
   const pkgRoot = resolveCliPackageRoot();
   const standaloneServer = path.join(pkgRoot, "apps/web/.next/standalone/apps/web/server.js");
   if (!existsSync(standaloneServer)) {
@@ -376,7 +414,12 @@ function startWebAppIfNeeded(port: number, stateDir: string): void {
     cwd: path.dirname(standaloneServer),
     detached: true,
     stdio: ["ignore", outFd, errFd],
-    env: { ...process.env, PORT: String(port), HOSTNAME: "127.0.0.1" },
+    env: {
+      ...process.env,
+      PORT: String(port),
+      HOSTNAME: "127.0.0.1",
+      OPENCLAW_GATEWAY_PORT: String(gatewayPort),
+    },
   });
   child.unref();
 }
@@ -386,8 +429,9 @@ async function runOpenClaw(
   args: string[],
   timeoutMs: number,
   ioMode: "capture" | "inherit" = "capture",
+  env?: NodeJS.ProcessEnv,
 ): Promise<SpawnResult> {
-  return await runCommandWithTimeout([openclawCommand, ...args], { timeoutMs, ioMode });
+  return await runCommandWithTimeout([openclawCommand, ...args], { timeoutMs, ioMode, env });
 }
 
 async function runOpenClawOrThrow(params: {
@@ -501,7 +545,8 @@ async function runOpenClawWithProgress(params: {
   }
 
   const detail = firstNonEmptyLine(result.stderr, result.stdout);
-  s.stop(detail ? `${params.errorMessage}: ${detail}` : params.errorMessage, result.code);
+  const stopMessage = detail ? `${params.errorMessage}: ${detail}` : params.errorMessage;
+  s.stop(stopMessage);
   throw new Error(detail ? `${params.errorMessage}\n${detail}` : params.errorMessage);
 }
 
@@ -633,11 +678,15 @@ async function ensureOpenClawCliAvailable(): Promise<OpenClawCliAvailability> {
 async function probeGateway(
   openclawCommand: string,
   profile: string,
+  gatewayPort?: number,
 ): Promise<{ ok: boolean; detail?: string }> {
+  const env = gatewayPort ? { OPENCLAW_GATEWAY_PORT: String(gatewayPort) } : undefined;
   const result = await runOpenClaw(
     openclawCommand,
     ["--profile", profile, "health", "--json"],
     12_000,
+    "capture",
+    env,
   ).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     return {
@@ -727,6 +776,7 @@ async function attemptGatewayAutoFix(params: {
   openclawCommand: string;
   profile: string;
   stateDir: string;
+  gatewayPort: number;
 }): Promise<GatewayAutoFixResult> {
   const steps: GatewayAutoFixStep[] = [];
   const commands: Array<{
@@ -746,12 +796,20 @@ async function attemptGatewayAutoFix(params: {
     },
     {
       name: "openclaw gateway install --force",
-      args: ["--profile", params.profile, "gateway", "install", "--force"],
+      args: [
+        "--profile",
+        params.profile,
+        "gateway",
+        "install",
+        "--force",
+        "--port",
+        String(params.gatewayPort),
+      ],
       timeoutMs: 2 * 60_000,
     },
     {
       name: "openclaw gateway start",
-      args: ["--profile", params.profile, "gateway", "start"],
+      args: ["--profile", params.profile, "gateway", "start", "--port", String(params.gatewayPort)],
       timeoutMs: 2 * 60_000,
     },
   ];
@@ -774,10 +832,10 @@ async function attemptGatewayAutoFix(params: {
     });
   }
 
-  let finalProbe = await probeGateway(params.openclawCommand, params.profile);
+  let finalProbe = await probeGateway(params.openclawCommand, params.profile, params.gatewayPort);
   for (let attempt = 0; attempt < 2 && !finalProbe.ok; attempt += 1) {
     await sleep(1_200);
-    finalProbe = await probeGateway(params.openclawCommand, params.profile);
+    finalProbe = await probeGateway(params.openclawCommand, params.profile, params.gatewayPort);
   }
 
   const logExcerpts = finalProbe.ok ? [] : collectGatewayLogExcerpts(params.stateDir);
@@ -831,7 +889,7 @@ function remediationForGatewayFailure(
     return `Gateway auth mismatch detected. Re-run \`openclaw --profile ${profile} onboard --install-daemon --reset\`.`;
   }
   if (normalized.includes("address already in use") || normalized.includes("eaddrinuse")) {
-    return `Port ${port} is busy. Stop the conflicting process or rerun bootstrap with \`--gateway-port <port>\`.`;
+    return `Port ${port} is busy. The bootstrap will auto-assign an available port, or you can explicitly specify one with \`--gateway-port <port>\`.`;
   }
   return `Run \`openclaw --profile ${profile} doctor --fix\` and retry \`ironclaw bootstrap --profile ${profile} --force-onboard\`.`;
 }
@@ -887,41 +945,8 @@ function readBootstrapConfig(stateDir: string): Record<string, unknown> | undefi
   return undefined;
 }
 
-function normalizeWorkspacePath(
-  rawPath: string,
-  stateDir: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  const trimmed = rawPath.trim();
-  if (trimmed.startsWith("~")) {
-    const home = resolveRequiredHomeDir(env, os.homedir);
-    const relative = trimmed.slice(1).replace(/^[/\\]+/, "");
-    return path.resolve(home, relative);
-  }
-  if (path.isAbsolute(trimmed)) {
-    return path.resolve(trimmed);
-  }
-  return path.resolve(stateDir, trimmed);
-}
-
-function resolveBootstrapWorkspaceDir(
-  stateDir: string,
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  const envWorkspace = env.OPENCLAW_WORKSPACE?.trim();
-  if (envWorkspace) {
-    return normalizeWorkspacePath(envWorkspace, stateDir, env);
-  }
-
-  const config = readBootstrapConfig(stateDir) as
-    | { agents?: { defaults?: { workspace?: unknown } } }
-    | undefined;
-  const configuredWorkspace = config?.agents?.defaults?.workspace;
-  if (typeof configuredWorkspace === "string" && configuredWorkspace.trim().length > 0) {
-    return normalizeWorkspacePath(configuredWorkspace, stateDir, env);
-  }
-
-  return path.join(stateDir, "workspace");
+function resolveBootstrapWorkspaceDir(stateDir: string): string {
+  return path.join(stateDir, `workspace-${DEFAULT_IRONCLAW_PROFILE}`);
 }
 
 /**
@@ -940,14 +965,13 @@ function resolveModelProvider(stateDir: string): string | undefined {
 }
 
 /**
- * Sync bundled Dench skill into the profile-managed skills folder.
- * This keeps Dench injected by default while avoiding workspace edits.
+ * Sync bundled Dench skill into the active workspace.
  */
-function syncBundledDenchSkill(stateDir: string): {
+function syncBundledDenchSkill(workspaceDir: string): {
   mode: "installed" | "updated";
   targetDir: string;
 } {
-  const targetDir = path.join(stateDir, "skills", "dench");
+  const targetDir = path.join(workspaceDir, "skills", "dench");
   const targetSkillFile = path.join(targetDir, "SKILL.md");
   const mode: "installed" | "updated" = existsSync(targetSkillFile) ? "updated" : "installed";
   const sourceDir = path.join(resolveCliPackageRoot(), "skills", "dench");
@@ -1045,14 +1069,14 @@ export function buildBootstrapDiagnostics(params: {
   }
 
   if (params.profile === DEFAULT_IRONCLAW_PROFILE) {
-    checks.push(createCheck("profile", "pass", `Profile verified: ${params.profile}.`));
+    checks.push(createCheck("profile", "pass", `Profile pinned: ${params.profile}.`));
   } else {
     checks.push(
       createCheck(
         "profile",
-        "warn",
-        `Profile is set to '${params.profile}' (expected '${DEFAULT_IRONCLAW_PROFILE}' for side-by-side safety).`,
-        `Rerun with \`OPENCLAW_PROFILE=${DEFAULT_IRONCLAW_PROFILE}\` or pass \`--profile ${DEFAULT_IRONCLAW_PROFILE}\`.`,
+        "fail",
+        `Ironclaw profile drift detected (${params.profile}).`,
+        `Ironclaw requires \`--profile ${DEFAULT_IRONCLAW_PROFILE}\`. Re-run bootstrap to repair environment defaults.`,
       ),
     );
   }
@@ -1085,7 +1109,7 @@ export function buildBootstrapDiagnostics(params: {
         "agent-auth",
         "fail",
         authCheck.detail,
-        `Run \`openclaw --profile ${params.profile} onboard --install-daemon\` to configure API keys.`,
+        `Run \`openclaw --profile ${DEFAULT_IRONCLAW_PROFILE} onboard --install-daemon\` to configure API keys.`,
       ),
     );
   }
@@ -1103,34 +1127,32 @@ export function buildBootstrapDiagnostics(params: {
     );
   }
 
-  const defaultStateDir = path.join(resolveRequiredHomeDir(env, os.homedir), ".openclaw");
-  const usesIsolatedStateDir =
-    params.profile === "default" || path.resolve(stateDir) !== path.resolve(defaultStateDir);
-  if (usesIsolatedStateDir) {
-    checks.push(createCheck("state-isolation", "pass", `Profile state dir: ${stateDir}.`));
+  const expectedStateDir = resolveProfileStateDir(DEFAULT_IRONCLAW_PROFILE, env);
+  const usesPinnedStateDir = path.resolve(stateDir) === path.resolve(expectedStateDir);
+  if (usesPinnedStateDir) {
+    checks.push(createCheck("state-isolation", "pass", `State dir pinned: ${stateDir}.`));
   } else {
     checks.push(
       createCheck(
         "state-isolation",
         "fail",
-        `Profile state dir overlaps default profile: ${stateDir}.`,
-        `Set \`OPENCLAW_PROFILE=${params.profile}\` (or \`OPENCLAW_STATE_DIR=~/.openclaw-${params.profile}\`) before bootstrap.`,
+        `Unexpected state dir: ${stateDir}.`,
+        `Ironclaw requires \`${expectedStateDir}\`. Re-run bootstrap to restore pinned defaults.`,
       ),
     );
   }
 
   const launchAgentLabel = resolveGatewayLaunchAgentLabel(params.profile);
-  const launchAgentIsIsolated =
-    params.profile === "default" || launchAgentLabel !== DEFAULT_GATEWAY_LAUNCH_AGENT_LABEL;
-  if (launchAgentIsIsolated) {
+  const expectedLaunchAgentLabel = resolveGatewayLaunchAgentLabel(DEFAULT_IRONCLAW_PROFILE);
+  if (launchAgentLabel === expectedLaunchAgentLabel) {
     checks.push(createCheck("daemon-label", "pass", `Gateway service label: ${launchAgentLabel}.`));
   } else {
     checks.push(
       createCheck(
         "daemon-label",
         "fail",
-        `Gateway service label is shared with default profile (${launchAgentLabel}).`,
-        "Use a non-default profile to avoid LaunchAgent/service collisions.",
+        `Gateway service label mismatch (${launchAgentLabel}).`,
+        `Ironclaw requires launch agent label ${expectedLaunchAgentLabel}.`,
       ),
     );
   }
@@ -1221,10 +1243,13 @@ export async function bootstrapCommand(
   runtime: RuntimeEnv = defaultRuntime,
 ): Promise<BootstrapSummary> {
   const nonInteractive = Boolean(opts.nonInteractive || opts.json);
-  const profile = resolveBootstrapProfile(opts);
   const rolloutStage = resolveBootstrapRolloutStage();
   const legacyFallbackEnabled = isLegacyFallbackEnabled();
-  applyCliProfileEnv({ profile });
+  const appliedProfile = applyCliProfileEnv({ profile: opts.profile });
+  const profile = appliedProfile.effectiveProfile;
+  if (appliedProfile.warning && !opts.json) {
+    runtime.log(theme.warn(appliedProfile.warning));
+  }
 
   const installResult = await ensureOpenClawCliAvailable();
   if (!installResult.available) {
@@ -1253,8 +1278,41 @@ export async function bootstrapCommand(
     });
   }
 
-  const requestedGatewayPort = parseOptionalPort(opts.gatewayPort) ?? DEFAULT_GATEWAY_PORT;
+  // Determine gateway port: use explicit override, or find available port
+  const explicitPort = parseOptionalPort(opts.gatewayPort);
+  let gatewayPort: number;
+  let portAutoAssigned = false;
+
+  if (explicitPort) {
+    gatewayPort = explicitPort;
+  } else if (await isPortAvailable(DEFAULT_GATEWAY_PORT)) {
+    gatewayPort = DEFAULT_GATEWAY_PORT;
+  } else {
+    // Default port is taken, find an available one starting from Ironclaw range
+    const availablePort = await findAvailablePort(
+      IRONCLAW_GATEWAY_PORT_START,
+      MAX_PORT_SCAN_ATTEMPTS,
+    );
+    if (!availablePort) {
+      throw new Error(
+        `Could not find an available gateway port between ${IRONCLAW_GATEWAY_PORT_START} and ${IRONCLAW_GATEWAY_PORT_START + MAX_PORT_SCAN_ATTEMPTS}. ` +
+          `Please specify a port explicitly with --gateway-port.`,
+      );
+    }
+    gatewayPort = availablePort;
+    portAutoAssigned = true;
+  }
+
   const stateDir = resolveProfileStateDir(profile);
+
+  if (portAutoAssigned && !opts.json) {
+    runtime.log(
+      theme.muted(
+        `Default gateway port ${DEFAULT_GATEWAY_PORT} is in use. Using auto-assigned port ${gatewayPort}.`,
+      ),
+    );
+  }
+
   const onboardArgv = [
     "--profile",
     profile,
@@ -1263,7 +1321,7 @@ export async function bootstrapCommand(
     "--gateway-bind",
     "loopback",
     "--gateway-port",
-    String(requestedGatewayPort),
+    String(gatewayPort),
   ];
   if (opts.forceOnboard) {
     onboardArgv.push("--reset");
@@ -1290,23 +1348,28 @@ export async function bootstrapCommand(
     });
   }
 
-  const denchInstall = syncBundledDenchSkill(stateDir);
+  const workspaceDir = resolveBootstrapWorkspaceDir(stateDir);
+  const denchInstall = syncBundledDenchSkill(workspaceDir);
   const workspaceSeed = seedWorkspaceFromAssets({
-    workspaceDir: resolveBootstrapWorkspaceDir(stateDir),
+    workspaceDir,
     packageRoot: resolveCliPackageRoot(),
   });
 
   // Ensure gateway.mode=local so the gateway never drifts to remote mode.
   // Keep this post-onboard so we normalize any wizard defaults.
   await ensureGatewayModeLocal(openclawCommand, profile);
+  // Persist the assigned port so all runtime clients (including web) resolve
+  // the same gateway target on subsequent requests.
+  await ensureGatewayPort(openclawCommand, profile, gatewayPort);
 
-  let gatewayProbe = await probeGateway(openclawCommand, profile);
+  let gatewayProbe = await probeGateway(openclawCommand, profile, gatewayPort);
   let gatewayAutoFix: GatewayAutoFixResult | undefined;
   if (!gatewayProbe.ok) {
     gatewayAutoFix = await attemptGatewayAutoFix({
       openclawCommand,
       profile,
       stateDir,
+      gatewayPort,
     });
     gatewayProbe = gatewayAutoFix.finalProbe;
     if (!gatewayProbe.ok && gatewayAutoFix.failureSummary) {
@@ -1318,11 +1381,11 @@ export async function bootstrapCommand(
       };
     }
   }
-  const gatewayUrl = `ws://127.0.0.1:${requestedGatewayPort}`;
+  const gatewayUrl = `ws://127.0.0.1:${gatewayPort}`;
   const preferredWebPort = parseOptionalPort(opts.webPort) ?? DEFAULT_WEB_APP_PORT;
 
   if (!(await probeForWebApp(preferredWebPort))) {
-    startWebAppIfNeeded(preferredWebPort, stateDir);
+    startWebAppIfNeeded(preferredWebPort, stateDir, gatewayPort);
   }
 
   const webReachable = await waitForWebApp(preferredWebPort);
@@ -1331,7 +1394,7 @@ export async function bootstrapCommand(
     profile,
     openClawCliAvailable: installResult.available,
     openClawVersion: installResult.version,
-    gatewayPort: requestedGatewayPort,
+    gatewayPort,
     gatewayUrl,
     gatewayProbe,
     webPort: preferredWebPort,
