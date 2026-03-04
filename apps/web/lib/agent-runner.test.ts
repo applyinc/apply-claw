@@ -65,6 +65,7 @@ function installMockWsModule() {
 			string,
 			ResFrame | ((frame: ReqFrame) => ResFrame)
 		> = {};
+		static failOpenForUrls = new Set<string>();
 
 		readyState = 0;
 		methods: string[] = [];
@@ -78,6 +79,10 @@ function installMockWsModule() {
 			this.constructorOpts = opts ?? {};
 			MockNodeWebSocket.instances.push(this);
 			queueMicrotask(() => {
+				if (MockNodeWebSocket.failOpenForUrls.has(this.constructorUrl)) {
+					this.emit("error", new Error("mock gateway open failure"));
+					return;
+				}
 				this.readyState = MockNodeWebSocket.OPEN;
 				this.emit("open");
 			});
@@ -303,6 +308,35 @@ describe("agent-runner", () => {
 			const ws = MockWs.instances[0];
 			const headers = ws.constructorOpts.headers as Record<string, string>;
 			expect(headers.Origin).toMatch(/^https:\/\//);
+			proc.kill("SIGTERM");
+		});
+
+		it("falls back to config gateway port when env port is stale", async () => {
+			const MockWs = installMockWsModule();
+			delete process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM;
+			process.env.OPENCLAW_GATEWAY_PORT = "19001";
+			MockWs.failOpenForUrls.add("ws://127.0.0.1:19001/");
+
+			const { spawnAgentProcess } = await import("./agent-runner.js");
+			const proc = spawnAgentProcess("hello");
+
+			await waitFor(
+				() =>  MockWs.instances.length >= 2,
+				{ attempts: 80, delayMs: 10 },
+			);
+
+			const [primaryAttempt] = MockWs.instances;
+			const fallbackAttempt = MockWs.instances.find(
+				(instance) => instance.constructorUrl !== primaryAttempt?.constructorUrl,
+			);
+			expect(primaryAttempt?.constructorUrl).toBe("ws://127.0.0.1:19001/");
+			expect(fallbackAttempt).toBeDefined();
+
+			await waitFor(
+				() =>  Boolean(fallbackAttempt?.methods.includes("connect")),
+				{ attempts: 80, delayMs: 10 },
+			);
+
 			proc.kill("SIGTERM");
 		});
 

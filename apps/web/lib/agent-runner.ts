@@ -266,7 +266,7 @@ function readGatewayConfigFromStateDir(
 	return null;
 }
 
-function resolveGatewayConnectionSettings(): GatewayConnectionSettings {
+function resolveGatewayConnectionCandidates(): GatewayConnectionSettings[] {
 	const envUrl = process.env.OPENCLAW_GATEWAY_URL?.trim();
 	const envToken = process.env.OPENCLAW_GATEWAY_TOKEN?.trim();
 	const envPassword = process.env.OPENCLAW_GATEWAY_PASSWORD?.trim();
@@ -278,31 +278,58 @@ function resolveGatewayConnectionSettings(): GatewayConnectionSettings {
 	const remote = asRecord(gateway?.remote);
 	const auth = asRecord(gateway?.auth);
 
-	const gatewayPort = envPort ?? parsePort(gateway?.port) ?? DEFAULT_GATEWAY_PORT;
+	const configGatewayPort = parsePort(gateway?.port) ?? DEFAULT_GATEWAY_PORT;
+	const gatewayPort = envPort ?? configGatewayPort;
 	const gatewayMode =
 		typeof gateway?.mode === "string" ? gateway.mode.trim().toLowerCase() : "";
 	const remoteUrl =
 		typeof remote?.url === "string" ? remote.url.trim() : undefined;
 	const useRemote = !envUrl && gatewayMode === "remote" && Boolean(remoteUrl);
 
-	const rawUrl = envUrl || (useRemote ? remoteUrl! : `ws://127.0.0.1:${gatewayPort}`);
-	const url = normalizeWsUrl(rawUrl, gatewayPort);
-
-	const token =
-		envToken ||
+	const configToken =
 		(useRemote && typeof remote?.token === "string"
 			? remote.token.trim()
 			: undefined) ||
 		(typeof auth?.token === "string" ? auth.token.trim() : undefined);
 
-	const password =
-		envPassword ||
+	const configPassword =
 		(useRemote && typeof remote?.password === "string"
 			? remote.password.trim()
 			: undefined) ||
 		(typeof auth?.password === "string" ? auth.password.trim() : undefined);
 
-	return { url, token, password };
+	const primaryRawUrl = envUrl || (useRemote ? remoteUrl! : `ws://127.0.0.1:${gatewayPort}`);
+	const primary: GatewayConnectionSettings = {
+		url: normalizeWsUrl(primaryRawUrl, gatewayPort),
+		token: envToken || configToken,
+		password: envPassword || configPassword,
+	};
+
+	const configRawUrl = useRemote
+		? remoteUrl!
+		: `ws://127.0.0.1:${configGatewayPort}`;
+	const fallback: GatewayConnectionSettings = {
+		url: normalizeWsUrl(configRawUrl, configGatewayPort),
+		token: configToken,
+		password: configPassword,
+	};
+
+	const candidates = [primary];
+	if (fallback.url !== primary.url) {
+		candidates.push(fallback);
+	}
+
+	const deduped: GatewayConnectionSettings[] = [];
+	const seen = new Set<string>();
+	for (const candidate of candidates) {
+		const key = `${candidate.url}|${candidate.token ?? ""}|${candidate.password ?? ""}`;
+		if (seen.has(key)) {
+			continue;
+		}
+		seen.add(key);
+		deduped.push(candidate);
+	}
+	return deduped;
 }
 
 export function buildConnectParams(
@@ -540,6 +567,26 @@ class GatewayWsClient {
 	}
 }
 
+async function openGatewayClient(
+	onEvent: (frame: GatewayEventFrame) => void,
+	onClose: (code: number, reason: string) => void,
+): Promise<{ client: GatewayWsClient; settings: GatewayConnectionSettings }> {
+	const candidates = resolveGatewayConnectionCandidates();
+	let lastError: Error | null = null;
+	for (const settings of candidates) {
+		const client = new GatewayWsClient(settings, onEvent, onClose);
+		try {
+			await client.open();
+			return { client, settings };
+		} catch (error) {
+			lastError =
+				error instanceof Error ? error : new Error(String(error));
+			client.close();
+		}
+	}
+	throw lastError ?? new Error("Gateway WebSocket connection failed");
+}
+
 class GatewayProcessHandle
 	extends EventEmitter
 	implements AgentProcessHandle
@@ -570,13 +617,11 @@ class GatewayProcessHandle
 
 	private async start(): Promise<void> {
 		try {
-			const settings = resolveGatewayConnectionSettings();
-			this.client = new GatewayWsClient(
-				settings,
+			const { client, settings } = await openGatewayClient(
 				(frame) => this.handleGatewayEvent(frame),
 				(code, reason) => this.handleSocketClose(code, reason),
 			);
-			await this.client.open();
+			this.client = client;
 			const connectRes = await this.client.request(
 				"connect",
 				buildConnectParams(settings),
@@ -844,12 +889,13 @@ export async function callGatewayRpc(
 	params?: Record<string, unknown>,
 	options?: { timeoutMs?: number },
 ): Promise<GatewayResFrame> {
-	const settings = resolveGatewayConnectionSettings();
 	let closed = false;
-	const client = new GatewayWsClient(settings, () => {}, () => {
-		closed = true;
-	});
-	await client.open();
+	const { client, settings } = await openGatewayClient(
+		() => {},
+		() => {
+			closed = true;
+		},
+	);
 	try {
 		const connect = await client.request(
 			"connect",
