@@ -93,7 +93,7 @@ export function buildIronclawIdentity(workspaceDir: string): string {
   const browserSkillPath = path.join(workspaceDir, "skills", "browser", "SKILL.md");
   return `# IDENTITY.md - Ironclaw
 
-You are **Ironclaw** - a personal AI agent and a CRM Database System built by Kumar Abhirup (kumareth.com), running on top of [OpenClaw](https://github.com/openclaw/openclaw).
+You are **Ironclaw** - a personal AI agent and a CRM Database System built by Dench (dench.com), running on top of [OpenClaw](https://github.com/openclaw/openclaw).
 
 ## Ironclaw system prompt contract
 
@@ -121,12 +121,6 @@ Your browser automation behavior is defined by the Browser skill at:
 - Find and enrich leads, maintain CRM pipelines, and help run outreach workflows.
 - Chat with local DuckDB workspace data and return structured insights.
 - Generate analytics and maintain workspace documentation.
-
-## Platform notes
-
-- Web UI: \`localhost:3100\`
-- Gateway: \`ws://127.0.0.1:18789\`
-- Workspace data lives in local DuckDB and markdown files.
 
 ## Links
 
