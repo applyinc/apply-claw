@@ -41,7 +41,7 @@ id: "<object_id from DuckDB>"
 name: "<object_name>"
 description: "<object_description>"
 icon: "<lucide_icon_name>"
-default_view: "<table|kanban>"
+default_view: "<table|kanban|calendar|timeline|gallery|list>"
 entry_count: <number>
 fields:
   - name: "Full Name"
@@ -56,6 +56,50 @@ fields:
   - name: "Assigned To"
     type: user
 ```
+
+### View Type Settings
+
+`.object.yaml` supports a `view_settings` block for configuring how each view type renders. These settings serve as defaults; individual saved views can override them.
+
+```yaml
+view_settings:
+  kanbanField: "Status" # enum field to group kanban columns by
+  calendarDateField: "Due Date" # date field for calendar events
+  calendarEndDateField: "End Date" # optional: end date for multi-day events
+  calendarMode: "month" # day | week | month | year
+  timelineStartField: "Start Date" # date field for timeline bar start
+  timelineEndField: "End Date" # date field for timeline bar end
+  timelineGroupField: "Status" # optional: enum field to group timeline rows
+  timelineZoom: "week" # day | week | month | quarter
+  galleryTitleField: "Name" # text field for gallery card title
+  galleryCoverField: "Image" # optional: field for gallery card cover
+  listTitleField: "Name" # text field for list row title
+  listSubtitleField: "Description" # optional: text field for list row subtitle
+```
+
+If an object has no custom date field, you MUST fall back to system timestamps:
+
+- `created_at` (always available on entries)
+- `updated_at` (always available on entries)
+
+These can be used in `calendarDateField`, `timelineStartField`, `timelineEndField`, filters, sorts, and date-based user requests.
+
+**View types:**
+
+| View Type  | Best for                        | Required settings           |
+| ---------- | ------------------------------- | --------------------------- |
+| `table`    | Spreadsheet-like data editing   | None (default)              |
+| `kanban`   | Status-based boards             | `kanbanField` (enum)        |
+| `calendar` | Date-based entries              | `calendarDateField` (date)  |
+| `timeline` | Gantt charts / project planning | `timelineStartField` (date) |
+| `gallery`  | Visual card grid                | None (auto-detects title)   |
+| `list`     | Simple compact list             | None (auto-detects title)   |
+
+When creating objects with specific use cases, set `default_view` and `view_settings` appropriately:
+
+- Task boards: `default_view: "kanban"` + `view_settings.kanbanField: "Status"`
+- Event calendars: `default_view: "calendar"` + `view_settings.calendarDateField: "Date"`
+- Project timelines: `default_view: "timeline"` + `view_settings.timelineStartField: "Start Date"` + `view_settings.timelineEndField: "End Date"`
 
 ### Saved Views and Filters
 
@@ -72,11 +116,19 @@ fields:
 | boolean             | is_true, is_false, is_empty, is_not_empty                                                  |
 | relation/user       | has_any, has_none, has_all, is_empty, is_not_empty                                         |
 
+**System timestamp columns are always available on every object entry**:
+
+- `created_at` (date/time)
+- `updated_at` (date/time)
+
+Treat them as date fields for filtering, sorting, calendar, and timeline operations even when `fields` has no `date` type columns.
+
 **Views template (append to .object.yaml):**
 
 ```yaml
 views:
   - name: "Active deals"
+    view_type: "table"
     filters:
       id: root
       conjunction: and
@@ -100,7 +152,27 @@ views:
       - amount
       - assignee
 
+  - name: "Board"
+    view_type: "kanban"
+    settings:
+      kanbanField: "Status"
+
+  - name: "Calendar"
+    view_type: "calendar"
+    settings:
+      calendarDateField: "Due Date"
+      calendarMode: "month"
+
+  - name: "Timeline"
+    view_type: "timeline"
+    settings:
+      timelineStartField: "Start Date"
+      timelineEndField: "End Date"
+      timelineGroupField: "Status"
+      timelineZoom: "week"
+
   - name: "Overdue"
+    view_type: "table"
     filters:
       id: root
       conjunction: and
@@ -116,6 +188,16 @@ views:
 
 active_view: "Active deals"
 ```
+
+Each saved view can specify:
+
+- `view_type`: `table` | `kanban` | `calendar` | `timeline` | `gallery` | `list` (defaults to object's `default_view`)
+- `settings`: per-view-type configuration (overrides object-level `view_settings`)
+- `filters`: standard filter rules
+- `sort`: sort rules
+- `columns`: visible column names (for table view)
+
+When a user asks for date-based operations (e.g. move from one date to another) and no custom date fields exist, default to `created_at` unless the user explicitly asks for `updated_at`.
 
 **Date format**: All date filter values MUST use ISO 8601 `YYYY-MM-DD` strings (e.g. `"2026-03-01"`). The special value `today` is also supported for `on`, `before`, and `after` operators.
 
@@ -533,7 +615,7 @@ cat {{WORKSPACE_PATH}}/lead/.object.yaml
 
 ## Kanban Boards
 
-When creating task/board objects, use `default_view = 'kanban'` and auto-create Status + Assigned To fields. Remember: ALL THREE STEPS are required.
+When creating task/board objects, use `default_view = 'kanban'` and auto-create Status + Assigned To fields. Set `view_settings.kanbanField` to the enum field that defines columns. Remember: ALL THREE STEPS are required.
 
 **Step 1 — SQL:**
 
@@ -586,6 +668,8 @@ description: "Task tracking board"
 icon: "check-square"
 default_view: "kanban"
 entry_count: 0
+view_settings:
+  kanbanField: "Status"
 fields:
   - name: "Status"
     type: enum
@@ -611,6 +695,19 @@ YAML
 | user     | Member ID from workspace_context.yaml | VARCHAR            | none        |
 | enum     | Dropdown with predefined values       | VARCHAR            | none        |
 | relation | Link to entry in another object       | VARCHAR (entry ID) | none        |
+
+### System Timestamp Columns (Always Present)
+
+Every entry row always has:
+
+- `created_at` (TIMESTAMPTZ in `entries`)
+- `updated_at` (TIMESTAMPTZ in `entries`)
+
+Important:
+
+- These are system columns, so they are NOT listed in the `fields` table.
+- If `SELECT * FROM fields` shows no date fields, you still have `created_at` and `updated_at`.
+- Use these as date fallbacks for calendar/timeline views and date-based natural language requests.
 
 **user fields**: Resolve member name to ID from `workspace_context.yaml` `members` list BEFORE inserting. User fields store IDs like `usr_abc123`, NOT names.
 
@@ -903,6 +1000,7 @@ After creating a `.report.json` file:
 - Always check existing data before creating (`SELECT` before `INSERT`, or `ON CONFLICT`)
 - Use views (`v_{object}`) for all reads — never write raw PIVOT queries for search
 - Never assume field names — verify with `SELECT * FROM fields WHERE object_id = ?`
+- **DATE FALLBACK**: If an object has no custom `date` field, use `created_at`/`updated_at` (from `entries`) instead of saying there are no date fields.
 - Extract ALL data from user messages — don't leave information unused
 - **REPORTS vs DOCUMENTS**: When the user asks for "reports", "analytics", "charts", "graphs", "metrics", "insights", or "breakdown" — use `.report.json` format (see Report Generation section above), NOT markdown. Only use markdown `.md` for SOPs, guides, notes, and prose documents. Reports render as interactive Recharts dashboards; markdown does not.
 - **INLINE CHART ARTIFACTS**: When answering analytics questions in chat, ALWAYS emit a `report-json` fenced code block so the UI renders interactive charts inline. Do NOT describe data in plain text when you can show it as a chart.
@@ -910,7 +1008,10 @@ After creating a `.report.json` file:
 - **USER FIELDS**: Resolve member name to ID from `workspace_context.yaml` BEFORE inserting
 - **ENUM FIELDS**: Use type "enum" with `enum_values` JSON array
 - **RELATION FIELDS**: Use type "relation" with `related_object_id`
-- **KANBAN**: Use `default_view = 'kanban'`, auto-create Status and Assigned To fields
+- **KANBAN**: Use `default_view = 'kanban'`, set `view_settings.kanbanField: "Status"`, auto-create Status and Assigned To fields
+- **CALENDAR**: Use `default_view = 'calendar'`, set `view_settings.calendarDateField` to the date field
+- **TIMELINE**: Use `default_view = 'timeline'`, set `view_settings.timelineStartField` and optionally `timelineEndField`
+- **VIEW TYPES**: Valid `default_view` values: `table`, `kanban`, `calendar`, `timeline`, `gallery`, `list`
 - **PROTECTED OBJECTS**: Never delete objects listed in `workspace_context.yaml` `protected_objects`
 - **ONE EXEC CALL**: Batch related SQL in a single transaction — this is the whole point
 - **workspace_context.yaml**: READ-ONLY. Never modify. Data flows from the CRM UI only.
