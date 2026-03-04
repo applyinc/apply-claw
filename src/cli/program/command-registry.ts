@@ -18,7 +18,7 @@ type CoreCliEntry = {
 
 const BOOTSTRAP_ENTRY: CoreCliEntry = {
   name: "bootstrap",
-  description: "Bootstrap IronClaw + OpenClaw and launch the web UI",
+  description: "Bootstrap DenchClaw + OpenClaw and launch the web UI",
   register: async ({ program }) => {
     const mod = await import("./register.bootstrap.js");
     mod.registerBootstrapCommand(program);

@@ -1,6 +1,6 @@
 ---
 name: Workspace profile support
-overview: Add full workspace profile and custom path support to the Ironclaw web app and the dench SKILL.md, so they respect OPENCLAW_PROFILE, OPENCLAW_HOME, OPENCLAW_STATE_DIR, and per-agent workspace config — matching the CLI's existing resolution logic.
+overview: Add full workspace profile and custom path support to the DenchClaw web app and the dench SKILL.md, so they respect OPENCLAW_PROFILE, OPENCLAW_HOME, OPENCLAW_STATE_DIR, and per-agent workspace config — matching the CLI's existing resolution logic.
 todos:
   - id: centralize-helpers
     content: Add resolveOpenClawStateDir() to apps/web/lib/workspace.ts and update resolveWorkspaceRoot() with OPENCLAW_PROFILE + OPENCLAW_HOME + OPENCLAW_STATE_DIR support

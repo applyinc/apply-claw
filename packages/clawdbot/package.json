@@ -11,6 +11,6 @@
     "./cli-entry": "./bin/clawdbot.js"
   },
   "dependencies": {
-    "ironclaw": "workspace:*"
+    "denchclaw": "workspace:*"
   }
 }

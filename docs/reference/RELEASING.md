@@ -23,7 +23,7 @@ When the operator says “release”, immediately do this preflight (no extra qu
 
 - [ ] Bump `package.json` version (e.g., `2026.1.29`).
 - [ ] Update CLI/version strings: [`src/cli/program.ts`](https://github.com/openclaw/openclaw/blob/main/src/cli/program.ts) and the Baileys user agent in [`src/provider-web.ts`](https://github.com/openclaw/openclaw/blob/main/src/provider-web.ts).
-- [ ] Confirm package metadata (name, description, repository, keywords, license) and `bin` map points to [`openclaw.mjs`](https://github.com/openclaw/openclaw/blob/main/openclaw.mjs) for `ironclaw`.
+- [ ] Confirm package metadata (name, description, repository, keywords, license) and `bin` map points to [`openclaw.mjs`](https://github.com/openclaw/openclaw/blob/main/openclaw.mjs) for `denchclaw`.
 - [ ] Confirm release notes/documentation call out the global runtime prerequisite: `npm i -g openclaw`.
 - [ ] If dependencies changed, run `pnpm install` so `pnpm-lock.yaml` is current.
 
@@ -31,7 +31,7 @@ When the operator says “release”, immediately do this preflight (no extra qu
 
 - [ ] If A2UI inputs changed, run `pnpm canvas:a2ui:bundle` and commit any updated [`src/canvas-host/a2ui/a2ui.bundle.js`](https://github.com/openclaw/openclaw/blob/main/src/canvas-host/a2ui/a2ui.bundle.js).
 - [ ] `pnpm run build` (regenerates `dist/`).
-- [ ] Verify npm package `files` includes only IronClaw artifacts (`dist/entry*`, web standalone, skills/assets) and does not rely on bundled OpenClaw core runtime code.
+- [ ] Verify npm package `files` includes only DenchClaw artifacts (`dist/entry*`, web standalone, skills/assets) and does not rely on bundled OpenClaw core runtime code.
 - [ ] Confirm `dist/build-info.json` exists and includes the expected `commit` hash (CLI banner uses this for npm installs).
 - [ ] Optional: `npm pack --pack-destination /tmp` after the build; inspect the tarball contents and keep it handy for the GitHub release (do **not** commit it).
 

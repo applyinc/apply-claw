@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const STATE_DIR = "/home/testuser/.openclaw-ironclaw";
+const STATE_DIR = "/home/testuser/.openclaw-dench";
 
 vi.mock("node:fs", () => ({
   existsSync: vi.fn(() => false),
@@ -17,12 +17,13 @@ vi.mock("@/lib/workspace", () => ({
   discoverWorkspaces: vi.fn(() => []),
   setUIActiveWorkspace: vi.fn(),
   getActiveWorkspaceName: vi.fn(() => "work"),
-  resolveOpenClawStateDir: vi.fn(() => "/home/testuser/.openclaw-ironclaw"),
+  resolveOpenClawStateDir: vi.fn(() => "/home/testuser/.openclaw-dench"),
   resolveWorkspaceDirForName: vi.fn((name: string) =>
-    join("/home/testuser/.openclaw-ironclaw", `workspace-${name}`),
+    join("/home/testuser/.openclaw-dench", `workspace-${name}`),
   ),
   isValidWorkspaceName: vi.fn(() => true),
   resolveWorkspaceRoot: vi.fn(() => null),
+  ensureAgentInConfig: vi.fn(),
 }));
 
 describe("POST /api/workspace/init", () => {
@@ -83,7 +84,7 @@ describe("POST /api/workspace/init", () => {
     expect(response.status).toBe(409);
   });
 
-  it("creates workspace directory at ~/.openclaw-ironclaw/workspace-<name> (enforces fixed layout)", async () => {
+  it("creates workspace directory at ~/.openclaw-dench/workspace-<name> (enforces fixed layout)", async () => {
     const { mkdirSync, writeFileSync } = await import("node:fs");
     const workspace = await import("@/lib/workspace");
     vi.mocked(workspace.discoverWorkspaces).mockReturnValue([]);
@@ -158,7 +159,7 @@ describe("POST /api/workspace/init", () => {
     const raw = identityWrites[identityWrites.length - 1][1];
     const identityContent = typeof raw === "string" ? raw : JSON.stringify(raw);
     expect(identityContent).toContain(expectedSkillPath);
-    expect(identityContent).toContain("Ironclaw");
+    expect(identityContent).toContain("DenchClaw");
     expect(identityContent).not.toContain("~skills");
   });
 });

@@ -17,7 +17,7 @@ import {
 } from "@/lib/workspace";
 import {
   seedWorkspaceFromAssets,
-  buildIronclawIdentity,
+  buildDenchClawIdentity,
 } from "@repo/cli/workspace-seed";
 
 export const dynamic = "force-dynamic";
@@ -108,7 +108,7 @@ export async function POST(req: Request) {
   }
   if (body.path?.trim()) {
     return Response.json(
-      { error: "Custom workspace paths are currently disabled. Workspaces are created in ~/.openclaw-ironclaw." },
+      { error: "Custom workspace paths are currently disabled. Workspaces are created in ~/.openclaw-dench." },
       { status: 400 },
     );
   }
@@ -163,7 +163,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // Seed managed skills, Ironclaw identity, DuckDB, and CRM object projections.
+  // Seed managed skills, DenchClaw identity, DuckDB, and CRM object projections.
   // This is the single source of truth shared with the CLI bootstrap path.
   if (projectRoot) {
     const seedResult = seedWorkspaceFromAssets({ workspaceDir, packageRoot: projectRoot });
@@ -173,10 +173,10 @@ export async function POST(req: Request) {
     }
   } else {
     // No project root available (e.g. standalone/production build without
-    // the repo tree). Still write the Ironclaw identity so the agent has
+    // the repo tree). Still write the DenchClaw identity so the agent has
     // a usable IDENTITY.md.
     const identityPath = join(workspaceDir, "IDENTITY.md");
-    writeFileSync(identityPath, buildIronclawIdentity(workspaceDir) + "\n", "utf-8");
+    writeFileSync(identityPath, buildDenchClawIdentity(workspaceDir) + "\n", "utf-8");
     seeded.push("IDENTITY.md");
   }
 

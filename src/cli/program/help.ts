@@ -27,7 +27,7 @@ const EXAMPLES = [
   ["openclaw gateway --port 18789", "Run the WebSocket Gateway locally."],
   [
     "openclaw --profile team-a gateway",
-    "Compatibility flag example: warns and still runs with --profile ironclaw.",
+    "Compatibility flag example: warns and still runs with --profile dench.",
   ],
   ["openclaw gateway --force", "Kill anything bound to the default gateway port, then start it."],
   ["openclaw gateway ...", "Gateway control via WebSocket."],
@@ -48,12 +48,9 @@ export function configureProgramHelp(program: Command, ctx: ProgramContext) {
     .version(ctx.programVersion)
     .option(
       "--dev",
-      "Compatibility flag; Ironclaw always uses --profile ironclaw and ~/.openclaw-ironclaw",
+      "Compatibility flag; DenchClaw always uses --profile dench and ~/.openclaw-dench",
     )
-    .option(
-      "--profile <name>",
-      "Compatibility flag; non-ironclaw values are ignored with a warning",
-    );
+    .option("--profile <name>", "Compatibility flag; non-dench values are ignored with a warning");
 
   program.option("--no-color", "Disable ANSI colors", false);
   program.helpOption("-h, --help", "Display help for command");

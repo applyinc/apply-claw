@@ -51,7 +51,7 @@ describe("POST /api/workspace/delete", () => {
     vi.mocked(workspace.discoverWorkspaces).mockReturnValue([
       {
         name: "work",
-        stateDir: "/home/testuser/.openclaw-ironclaw",
+        stateDir: "/home/testuser/.openclaw-dench",
         workspaceDir: null,
         isActive: false,
         hasConfig: true,
@@ -65,13 +65,13 @@ describe("POST /api/workspace/delete", () => {
   it("deletes workspace directory directly via rmSync", async () => {
     const workspace = await import("@/lib/workspace");
     const { rmSync } = await import("node:fs");
-    const workspaceDir = "/home/testuser/.openclaw-ironclaw/workspace-work";
+    const workspaceDir = "/home/testuser/.openclaw-dench/workspace-work";
 
     vi.mocked(workspace.discoverWorkspaces)
       .mockReturnValueOnce([
         {
           name: "work",
-          stateDir: "/home/testuser/.openclaw-ironclaw",
+          stateDir: "/home/testuser/.openclaw-dench",
           workspaceDir,
           isActive: true,
           hasConfig: true,
@@ -98,12 +98,12 @@ describe("POST /api/workspace/delete", () => {
   it("returns 500 when rmSync fails", async () => {
     const workspace = await import("@/lib/workspace");
     const { rmSync } = await import("node:fs");
-    const workspaceDir = "/home/testuser/.openclaw-ironclaw/workspace-work";
+    const workspaceDir = "/home/testuser/.openclaw-dench/workspace-work";
 
     vi.mocked(workspace.discoverWorkspaces).mockReturnValue([
       {
         name: "work",
-        stateDir: "/home/testuser/.openclaw-ironclaw",
+        stateDir: "/home/testuser/.openclaw-dench",
         workspaceDir,
         isActive: false,
         hasConfig: true,

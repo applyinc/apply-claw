@@ -15,7 +15,7 @@ export function assertSupportedRuntime(): void {
     major < MIN_NODE_MAJOR || (major === MIN_NODE_MAJOR && minor < MIN_NODE_MINOR);
   if (unsupported) {
     throw new Error(
-      `IronClaw requires Node ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}+ (current: ${process.versions.node}).`,
+      `DenchClaw requires Node ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR}+ (current: ${process.versions.node}).`,
     );
   }
 }

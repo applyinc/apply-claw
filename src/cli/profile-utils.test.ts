@@ -3,7 +3,7 @@ import { isValidProfileName, normalizeProfileName } from "./profile-utils.js";
 
 describe("profile-utils", () => {
   it("accepts path-safe profile names and rejects unsafe values", () => {
-    expect(isValidProfileName("ironclaw")).toBe(true);
+    expect(isValidProfileName("denchclaw")).toBe(true);
     expect(isValidProfileName("Team_A-1")).toBe(true);
     expect(isValidProfileName("")).toBe(false);
     expect(isValidProfileName(" has-space ")).toBe(false);

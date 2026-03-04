@@ -186,8 +186,8 @@ const LEFT_SIDEBAR_MIN = 200;
 const LEFT_SIDEBAR_MAX = 480;
 const RIGHT_SIDEBAR_MIN = 260;
 const RIGHT_SIDEBAR_MAX = 900;
-const STORAGE_LEFT = "ironclaw-workspace-left-sidebar-width";
-const STORAGE_RIGHT = "ironclaw-workspace-right-sidebar-width";
+const STORAGE_LEFT = "dench-workspace-left-sidebar-width";
+const STORAGE_RIGHT = "dench-workspace-right-sidebar-width";
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));

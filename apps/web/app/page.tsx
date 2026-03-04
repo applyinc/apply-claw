@@ -37,7 +37,7 @@ const CLAW_ASCII = [
   " ░                          ░░                                                           ",
 ];
 
-const IRONCLAW_ASCII = [
+const DENCHCLAW_ASCII = [
   " ██╗██████╗  ██████╗ ███╗   ██╗ ██████╗██╗      █████╗ ██╗    ██╗",
   " ██║██╔══██╗██╔═══██╗████╗  ██║██╔════╝██║     ██╔══██╗██║    ██║",
   " ██║██████╔╝██║   ██║██╔██╗ ██║██║     ██║     ███████║██║ █╗ ██║",
@@ -103,11 +103,11 @@ export default function Home() {
 
         {/* Foreground content */}
         <div className="relative z-10 flex flex-col items-center">
-          <div className="ascii-banner select-none hidden sm:block" aria-label="IRONCLAW">
-            {IRONCLAW_ASCII.join("\n")}
+          <div className="ascii-banner select-none hidden sm:block" aria-label="DENCHCLAW">
+            {DENCHCLAW_ASCII.join("\n")}
           </div>
           <h1 className="sm:hidden text-3xl font-bold text-stone-600" style={{ fontFamily: "monospace" }}>
-            IRONCLAW
+            DENCHCLAW
           </h1>
           <Link
             href="/workspace"

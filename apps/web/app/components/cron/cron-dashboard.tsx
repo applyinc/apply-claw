@@ -197,7 +197,7 @@ export function CronDashboard({
             }}
           >
             <p className="text-sm" style={{ color: "var(--color-text-muted)" }}>
-              No cron jobs configured. Use <code className="px-1.5 py-0.5 rounded text-xs" style={{ background: "var(--color-surface-hover)" }}>ironclaw cron add</code> to create one.
+              No cron jobs configured. Use <code className="px-1.5 py-0.5 rounded text-xs" style={{ background: "var(--color-surface-hover)" }}>denchclaw cron add</code> to create one.
             </p>
           </div>
         ) : (

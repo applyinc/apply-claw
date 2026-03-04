@@ -4,45 +4,45 @@ import {
   type ProviderAuthContext,
   type ProviderAuthResult,
 } from "openclaw/plugin-sdk";
-import { loginIronclawOAuth, type IronclawOAuthConfig } from "./oauth.js";
+import { loginDenchClawOAuth, type DenchClawOAuthConfig } from "./oauth.js";
 
-const PLUGIN_ID = "ironclaw-auth";
-const PROVIDER_ID = "ironclaw";
-const PROVIDER_LABEL = "Ironclaw";
-const OAUTH_PLACEHOLDER = "ironclaw-oauth";
-const DEFAULT_AUTH_URL = "https://auth.ironclaw.ai/oauth/authorize";
-const DEFAULT_TOKEN_URL = "https://auth.ironclaw.ai/oauth/token";
+const PLUGIN_ID = "denchclaw-auth";
+const PROVIDER_ID = "denchclaw";
+const PROVIDER_LABEL = "DenchClaw";
+const OAUTH_PLACEHOLDER = "denchclaw-oauth";
+const DEFAULT_AUTH_URL = "https://auth.denchclaw.ai/oauth/authorize";
+const DEFAULT_TOKEN_URL = "https://auth.denchclaw.ai/oauth/token";
 const DEFAULT_REDIRECT_URI = "http://127.0.0.1:47089/oauth/callback";
 const DEFAULT_SCOPES = ["openid", "profile", "email", "offline_access"];
-const DEFAULT_BASE_URL = "https://api.ironclaw.ai/v1";
+const DEFAULT_BASE_URL = "https://api.denchclaw.ai/v1";
 const DEFAULT_MODEL_ID = "chat";
 const DEFAULT_CONTEXT_WINDOW = 128000;
 const DEFAULT_MAX_TOKENS = 8192;
 
-const CLIENT_ID_KEYS = ["IRONCLAW_OAUTH_CLIENT_ID", "OPENCLAW_IRONCLAW_OAUTH_CLIENT_ID"];
+const CLIENT_ID_KEYS = ["DENCHCLAW_OAUTH_CLIENT_ID", "OPENCLAW_DENCHCLAW_OAUTH_CLIENT_ID"];
 const CLIENT_SECRET_KEYS = [
-  "IRONCLAW_OAUTH_CLIENT_SECRET",
-  "OPENCLAW_IRONCLAW_OAUTH_CLIENT_SECRET",
+  "DENCHCLAW_OAUTH_CLIENT_SECRET",
+  "OPENCLAW_DENCHCLAW_OAUTH_CLIENT_SECRET",
 ];
-const AUTH_URL_KEYS = ["IRONCLAW_OAUTH_AUTH_URL", "OPENCLAW_IRONCLAW_OAUTH_AUTH_URL"];
-const TOKEN_URL_KEYS = ["IRONCLAW_OAUTH_TOKEN_URL", "OPENCLAW_IRONCLAW_OAUTH_TOKEN_URL"];
-const REDIRECT_URI_KEYS = ["IRONCLAW_OAUTH_REDIRECT_URI", "OPENCLAW_IRONCLAW_OAUTH_REDIRECT_URI"];
-const SCOPES_KEYS = ["IRONCLAW_OAUTH_SCOPES", "OPENCLAW_IRONCLAW_OAUTH_SCOPES"];
-const USERINFO_URL_KEYS = ["IRONCLAW_OAUTH_USERINFO_URL", "OPENCLAW_IRONCLAW_OAUTH_USERINFO_URL"];
+const AUTH_URL_KEYS = ["DENCHCLAW_OAUTH_AUTH_URL", "OPENCLAW_DENCHCLAW_OAUTH_AUTH_URL"];
+const TOKEN_URL_KEYS = ["DENCHCLAW_OAUTH_TOKEN_URL", "OPENCLAW_DENCHCLAW_OAUTH_TOKEN_URL"];
+const REDIRECT_URI_KEYS = ["DENCHCLAW_OAUTH_REDIRECT_URI", "OPENCLAW_DENCHCLAW_OAUTH_REDIRECT_URI"];
+const SCOPES_KEYS = ["DENCHCLAW_OAUTH_SCOPES", "OPENCLAW_DENCHCLAW_OAUTH_SCOPES"];
+const USERINFO_URL_KEYS = ["DENCHCLAW_OAUTH_USERINFO_URL", "OPENCLAW_DENCHCLAW_OAUTH_USERINFO_URL"];
 const BASE_URL_KEYS = [
-  "IRONCLAW_PROVIDER_BASE_URL",
-  "IRONCLAW_API_BASE_URL",
-  "OPENCLAW_IRONCLAW_PROVIDER_BASE_URL",
+  "DENCHCLAW_PROVIDER_BASE_URL",
+  "DENCHCLAW_API_BASE_URL",
+  "OPENCLAW_DENCHCLAW_PROVIDER_BASE_URL",
 ];
 const MODEL_IDS_KEYS = [
-  "IRONCLAW_PROVIDER_MODEL_IDS",
-  "IRONCLAW_MODEL_IDS",
-  "OPENCLAW_IRONCLAW_MODEL_IDS",
+  "DENCHCLAW_PROVIDER_MODEL_IDS",
+  "DENCHCLAW_MODEL_IDS",
+  "OPENCLAW_DENCHCLAW_MODEL_IDS",
 ];
 const DEFAULT_MODEL_KEYS = [
-  "IRONCLAW_PROVIDER_DEFAULT_MODEL",
-  "IRONCLAW_DEFAULT_MODEL",
-  "OPENCLAW_IRONCLAW_DEFAULT_MODEL",
+  "DENCHCLAW_PROVIDER_DEFAULT_MODEL",
+  "DENCHCLAW_DEFAULT_MODEL",
+  "OPENCLAW_DENCHCLAW_DEFAULT_MODEL",
 ];
 
 const ENV_VARS = [
@@ -118,11 +118,11 @@ function buildModelDefinition(modelId: string) {
   };
 }
 
-function resolveOAuthConfig(): IronclawOAuthConfig {
+function resolveOAuthConfig(): DenchClawOAuthConfig {
   const clientId = resolveEnv(CLIENT_ID_KEYS);
   if (!clientId) {
     throw new Error(
-      ["Ironclaw OAuth client id is required.", `Set one of: ${CLIENT_ID_KEYS.join(", ")}`].join(
+      ["DenchClaw OAuth client id is required.", `Set one of: ${CLIENT_ID_KEYS.join(", ")}`].join(
         "\n",
       ),
     );
@@ -158,7 +158,7 @@ function buildAuthResult(params: {
   const agentModels = Object.fromEntries(
     finalModelIds.map((modelId, index) => [
       `${PROVIDER_ID}/${modelId}`,
-      index === 0 ? { alias: "ironclaw" } : {},
+      index === 0 ? { alias: "denchclaw" } : {},
     ]),
   );
 
@@ -201,29 +201,29 @@ function buildAuthResult(params: {
   };
 }
 
-const ironclawAuthPlugin = {
+const denchclawAuthPlugin = {
   id: PLUGIN_ID,
-  name: "Ironclaw OAuth",
-  description: "OAuth flow for Ironclaw-hosted models",
+  name: "DenchClaw OAuth",
+  description: "OAuth flow for DenchClaw-hosted models",
   configSchema: emptyPluginConfigSchema(),
   register(api: OpenClawPluginApi) {
     api.registerProvider({
       id: PROVIDER_ID,
       label: PROVIDER_LABEL,
       docsPath: "/providers/models",
-      aliases: ["ironclaw-ai"],
+      aliases: ["denchclaw-ai"],
       envVars: ENV_VARS,
       auth: [
         {
           id: "oauth",
-          label: "Ironclaw OAuth",
+          label: "DenchClaw OAuth",
           hint: "PKCE + localhost callback",
           kind: "oauth",
           run: async (ctx: ProviderAuthContext) => {
-            const progress = ctx.prompter.progress("Starting Ironclaw OAuth...");
+            const progress = ctx.prompter.progress("Starting DenchClaw OAuth...");
             try {
               const oauthConfig = resolveOAuthConfig();
-              const result = await loginIronclawOAuth(
+              const result = await loginDenchClawOAuth(
                 {
                   isRemote: ctx.isRemote,
                   openUrl: ctx.openUrl,
@@ -235,16 +235,16 @@ const ironclawAuthPlugin = {
                 oauthConfig,
               );
 
-              progress.stop("Ironclaw OAuth complete");
+              progress.stop("DenchClaw OAuth complete");
               return buildAuthResult(result);
             } catch (error) {
-              progress.stop("Ironclaw OAuth failed");
+              progress.stop("DenchClaw OAuth failed");
               await ctx.prompter.note(
                 [
-                  "Set IRONCLAW_OAUTH_CLIENT_ID (and optionally auth/token URLs) before retrying.",
-                  "You can also configure model ids with IRONCLAW_PROVIDER_MODEL_IDS.",
+                  "Set DENCHCLAW_OAUTH_CLIENT_ID (and optionally auth/token URLs) before retrying.",
+                  "You can also configure model ids with DENCHCLAW_PROVIDER_MODEL_IDS.",
                 ].join("\n"),
-                "Ironclaw OAuth",
+                "DenchClaw OAuth",
               );
               throw error;
             }
@@ -255,4 +255,4 @@ const ironclawAuthPlugin = {
   },
 };
 
-export default ironclawAuthPlugin;
+export default denchclawAuthPlugin;

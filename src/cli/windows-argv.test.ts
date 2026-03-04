@@ -3,7 +3,7 @@ import { normalizeWindowsArgv } from "./windows-argv.js";
 
 describe("normalizeWindowsArgv", () => {
   it("returns argv unchanged on non-windows platforms", () => {
-    const argv = ["node", "ironclaw", "status"];
+    const argv = ["node", "denchclaw", "status"];
     expect(
       normalizeWindowsArgv(argv, {
         platform: "darwin",

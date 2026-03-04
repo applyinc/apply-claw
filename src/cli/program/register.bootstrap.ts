@@ -8,11 +8,8 @@ import { runCommandWithRuntime } from "../cli-utils.js";
 export function registerBootstrapCommand(program: Command) {
   program
     .command("bootstrap")
-    .description("Bootstrap IronClaw on top of OpenClaw and open the web UI")
-    .option(
-      "--profile <name>",
-      "Compatibility flag; non-ironclaw values are ignored with a warning",
-    )
+    .description("Bootstrap DenchClaw on top of OpenClaw and open the web UI")
+    .option("--profile <name>", "Compatibility flag; non-dench values are ignored with a warning")
     .option("--force-onboard", "Run onboarding even if config already exists", false)
     .option("--non-interactive", "Skip prompts where possible", false)
     .option("--yes", "Auto-approve install prompts", false)

@@ -8,13 +8,13 @@ import { normalizeFilterGroup, type SavedView, type ViewTypeSettings } from "./o
 
 const execAsync = promisify(exec);
 
-const UI_STATE_FILENAME = ".ironclaw-ui-state.json";
-const FIXED_STATE_DIRNAME = ".openclaw-ironclaw";
+const UI_STATE_FILENAME = ".dench-ui-state.json";
+const FIXED_STATE_DIRNAME = ".openclaw-dench";
 const WORKSPACE_PREFIX = "workspace-";
 const ROOT_WORKSPACE_DIRNAME = "workspace";
 const WORKSPACE_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const DEFAULT_WORKSPACE_NAME = "default";
-const IRONCLAW_PROFILE = "ironclaw";
+const DENCHCLAW_PROFILE = "dench";
 
 /** In-memory override; takes precedence over persisted state. */
 let _uiActiveWorkspace: string | null | undefined;
@@ -223,7 +223,7 @@ export function discoverProfiles(): DiscoveredProfile[] {
   return discoverWorkspaces();
 }
 export function getEffectiveProfile(): string {
-  return IRONCLAW_PROFILE;
+  return DENCHCLAW_PROFILE;
 }
 export function setUIActiveProfile(profile: string | null): void {
   setUIActiveWorkspace(normalizeWorkspaceName(profile));
@@ -239,7 +239,7 @@ export function getRegisteredWorkspacePath(_profile: string | null): string | nu
 }
 export function registerWorkspacePath(_profile: string, _absolutePath: string): void {
   // No-op: workspace paths are discovered from managed dirs:
-  // ~/.openclaw-ironclaw/workspace (default) and ~/.openclaw-ironclaw/workspace-<name>.
+  // ~/.openclaw-dench/workspace (default) and ~/.openclaw-dench/workspace-<name>.
 }
 
 export function isValidWorkspaceName(name: string): boolean {

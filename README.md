@@ -18,13 +18,13 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/ironclaw"><img src="https://img.shields.io/npm/v/ironclaw?style=for-the-badge&color=000" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/denchclaw"><img src="https://img.shields.io/npm/v/denchclaw?style=for-the-badge&color=000" alt="npm version"></a>
   <a href="https://discord.gg/clawd"><img src="https://img.shields.io/discord/1456350064065904867?label=Discord&logo=discord&logoColor=white&color=5865F2&style=for-the-badge" alt="Discord"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge" alt="MIT License"></a>
 </p>
 
 <p align="center">
-  <a href="https://ironclaw.sh">Website</a> · <a href="https://docs.openclaw.ai">Docs</a> · <a href="https://github.com/openclaw/openclaw">OpenClaw Framework</a> · <a href="https://discord.gg/clawd">Discord</a> · <a href="https://clawhub.com">Skills Store</a>
+  <a href="https://denchclaw.sh">Website</a> · <a href="https://docs.openclaw.ai">Docs</a> · <a href="https://github.com/openclaw/openclaw">OpenClaw Framework</a> · <a href="https://discord.gg/clawd">Discord</a> · <a href="https://clawhub.com">Skills Store</a>
 </p>
 
 ---
@@ -35,7 +35,7 @@
 
 ```bash
 npm i -g openclaw
-npx ironclaw
+npx denchclaw
 ```
 
 Opens at `localhost:3100`. That's it.
@@ -44,15 +44,15 @@ Three steps total:
 
 ```
 1. npm i -g openclaw
-2. npx ironclaw
+2. npx denchclaw
 3. bootstrap opens UI on localhost:3100
 ```
 
 ---
 
-## What is Ironclaw?
+## What is DenchClaw?
 
-Ironclaw is a personal AI agent and CRM that runs locally on your machine. It connects to every messaging channel you use, manages structured data through DuckDB, browses the web with your Chrome profile, and gives you a full web UI for pipeline management, analytics, and document management.
+DenchClaw is a personal AI agent and CRM that runs locally on your machine. It connects to every messaging channel you use, manages structured data through DuckDB, browses the web with your Chrome profile, and gives you a full web UI for pipeline management, analytics, and document management.
 
 Built on [OpenClaw](https://github.com/openclaw/openclaw) with **Vercel AI SDK v6** as the LLM orchestration layer.
 
@@ -70,7 +70,7 @@ Built on [OpenClaw](https://github.com/openclaw/openclaw) with **Vercel AI SDK v
 
 ### Find Leads
 
-Type a prompt, Ironclaw scrapes the web using your actual Chrome profile (all your auth sessions, cookies, history). It logs into LinkedIn, browses YC batches, pulls company data. No separate login, no API keys for browsing.
+Type a prompt, DenchClaw scrapes the web using your actual Chrome profile (all your auth sessions, cookies, history). It logs into LinkedIn, browses YC batches, pulls company data. No separate login, no API keys for browsing.
 
 ### Enrich Data
 
@@ -82,7 +82,7 @@ Personalized LinkedIn messages, cold emails, follow-up sequences. Each message i
 
 ### Analyze Pipeline
 
-Ask for analytics in plain English. Ironclaw queries your DuckDB workspace and generates interactive Recharts dashboards inline. Pipeline funnels, outreach activity charts, conversion rates, donut breakdowns.
+Ask for analytics in plain English. DenchClaw queries your DuckDB workspace and generates interactive Recharts dashboards inline. Pipeline funnels, outreach activity charts, conversion rates, donut breakdowns.
 
 ### Automate Everything
 
@@ -94,11 +94,11 @@ Cron jobs that run on schedule. Follow-up if no reply after 3 days. Move leads t
 
 ### Uses Your Chrome Profile
 
-Unlike other AI tools, Ironclaw copies your existing Chrome profile with all your auth sessions, cookies, and history. It logs into LinkedIn, scrapes YC batches, and sends messages as you. No separate browser login needed.
+Unlike other AI tools, DenchClaw copies your existing Chrome profile with all your auth sessions, cookies, and history. It logs into LinkedIn, scrapes YC batches, and sends messages as you. No separate browser login needed.
 
 ### Chat with Your Database
 
-Ask questions in plain English. Ironclaw translates to SQL, queries your local DuckDB, and returns structured results. Like having a data analyst on speed dial.
+Ask questions in plain English. DenchClaw translates to SQL, queries your local DuckDB, and returns structured results. Like having a data analyst on speed dial.
 
 ```
 You: "How many founders have we contacted from YC W26?"
@@ -111,7 +111,7 @@ Reply rate is 34%.
 
 ### Coding Agent with Diffs
 
-Ironclaw writes code. Review changes in a rich diff viewer before applying. Config changes, automation scripts, data transformations. All with diffs you approve.
+DenchClaw writes code. Review changes in a rich diff viewer before applying. Config changes, automation scripts, data transformations. All with diffs you approve.
 
 ### Your Second Brain
 
@@ -138,18 +138,18 @@ The web app runs at `localhost:3100` and includes:
 
 One agent, every channel. Connect any messaging platform. Your AI agent responds everywhere, managed from a single terminal.
 
-| Channel             | Setup                                                         |
-| ------------------- | ------------------------------------------------------------- |
-| **WhatsApp**        | `ironclaw channels login` + set `channels.whatsapp.allowFrom` |
-| **Telegram**        | Set `TELEGRAM_BOT_TOKEN` or `channels.telegram.botToken`      |
-| **Slack**           | Set `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN`                     |
-| **Discord**         | Set `DISCORD_BOT_TOKEN` or `channels.discord.token`           |
-| **Signal**          | Requires `signal-cli` + `channels.signal` config              |
-| **iMessage**        | Via BlueBubbles (recommended) or legacy macOS integration     |
-| **Microsoft Teams** | Configure Teams app + Bot Framework                           |
-| **Google Chat**     | Chat API integration                                          |
-| **Matrix**          | Extension channel                                             |
-| **WebChat**         | Built-in, uses Gateway WebSocket directly                     |
+| Channel             | Setup                                                          |
+| ------------------- | -------------------------------------------------------------- |
+| **WhatsApp**        | `denchclaw channels login` + set `channels.whatsapp.allowFrom` |
+| **Telegram**        | Set `TELEGRAM_BOT_TOKEN` or `channels.telegram.botToken`       |
+| **Slack**           | Set `SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN`                      |
+| **Discord**         | Set `DISCORD_BOT_TOKEN` or `channels.discord.token`            |
+| **Signal**          | Requires `signal-cli` + `channels.signal` config               |
+| **iMessage**        | Via BlueBubbles (recommended) or legacy macOS integration      |
+| **Microsoft Teams** | Configure Teams app + Bot Framework                            |
+| **Google Chat**     | Chat API integration                                           |
+| **Matrix**          | Extension channel                                              |
+| **WebChat**         | Built-in, uses Gateway WebSocket directly                      |
 
 ```
   WhatsApp · Telegram · Slack · Discord
@@ -157,7 +157,7 @@ One agent, every channel. Connect any messaging platform. Your AI agent responds
                │
                ▼
   ┌────────────────────────────┐
-  │     Ironclaw Gateway       │
+  │     DenchClaw Gateway       │
   │   ws://127.0.0.1:18789    │
   └─────────────┬──────────────┘
                 │
@@ -165,7 +165,7 @@ One agent, every channel. Connect any messaging platform. Your AI agent responds
     │           │           │
     ▼           ▼           ▼
   AI SDK     Web UI       CLI
-  Engine     (Dench)    (ironclaw)
+  Engine     (Dench)    (denchclaw)
 ```
 
 ---
@@ -217,7 +217,7 @@ Reports use the `report-json` format and render inline in chat as interactive Re
 
 ## Kanban Pipeline
 
-Drag-and-drop kanban boards that auto-update as leads reply. Ironclaw moves cards through your pipeline automatically.
+Drag-and-drop kanban boards that auto-update as leads reply. DenchClaw moves cards through your pipeline automatically.
 
 Columns like New Lead → Contacted → Qualified → Demo Scheduled → Closed map to your sales process. Each card shows the lead name, company, and last action taken.
 
@@ -243,7 +243,7 @@ Scheduled automations that run in the background:
 | CRM backup to S3       | `0 2 * * *`    | Nightly workspace backup             |
 
 ```bash
-ironclaw cron list
+denchclaw cron list
 ```
 
 ---
@@ -267,9 +267,9 @@ The Gateway is the local-first WebSocket control plane that routes everything:
 ### Security
 
 - **DM pairing** enabled by default. Unknown senders get a pairing code.
-- Approve with `ironclaw pairing approve <channel> <code>`
+- Approve with `denchclaw pairing approve <channel> <code>`
 - Non-main sessions can be sandboxed in Docker
-- Run `ironclaw doctor` to audit DM policies
+- Run `denchclaw doctor` to audit DM policies
 
 ---
 
@@ -329,22 +329,22 @@ Features:
 
 ```bash
 # Install
-npm i -g ironclaw
+npm i -g denchclaw
 
 # Run onboarding wizard
-ironclaw onboard --install-daemon
+denchclaw onboard --install-daemon
 
 # Start the gateway
-ironclaw gateway start
+denchclaw gateway start
 
 # Open the web UI
 open http://localhost:3100
 
 # Talk to your agent from CLI
-ironclaw agent --message "Summarize my inbox" --thinking high
+denchclaw agent --message "Summarize my inbox" --thinking high
 
 # Send a message
-ironclaw message send --to +1234567890 --message "Hello from Ironclaw"
+denchclaw message send --to +1234567890 --message "Hello from DenchClaw"
 ```
 
 ---
@@ -352,8 +352,8 @@ ironclaw message send --to +1234567890 --message "Hello from Ironclaw"
 ## From Source
 
 ```bash
-git clone https://github.com/kumarabhirup/ironclaw.git
-cd ironclaw
+git clone https://github.com/kumarabhirup/denchclaw.git
+cd denchclaw
 
 pnpm install
 pnpm build
@@ -402,7 +402,7 @@ pnpm dev              # Dev mode (auto-reload)
 
 ## Upstream
 
-Ironclaw is built on [OpenClaw](https://github.com/openclaw/openclaw). To sync with upstream:
+DenchClaw is built on [OpenClaw](https://github.com/openclaw/openclaw). To sync with upstream:
 
 ```bash
 git remote add upstream https://github.com/openclaw/openclaw.git
@@ -416,8 +416,8 @@ git merge upstream/main
 
 MIT Licensed. Fork it, extend it, make it yours.
 
-[![Star History Chart](https://api.star-history.com/image?repos=denchHQ/ironclaw&type=date&legend=top-left)](https://www.star-history.com/?repos=denchHQ%2Fironclaw&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/image?repos=denchHQ/denchclaw&type=date&legend=top-left)](https://www.star-history.com/?repos=denchHQ%2Fdenchclaw&type=date&legend=top-left)
 
 <p align="center">
-  <a href="https://github.com/DenchHQ/ironclaw"><img src="https://img.shields.io/github/stars/DenchHQ/ironclaw?style=for-the-badge" alt="GitHub stars"></a>
+  <a href="https://github.com/DenchHQ/denchclaw"><img src="https://img.shields.io/github/stars/DenchHQ/denchclaw?style=for-the-badge" alt="GitHub stars"></a>
 </p>

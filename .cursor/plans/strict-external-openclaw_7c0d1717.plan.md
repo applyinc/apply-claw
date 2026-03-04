@@ -1,15 +1,15 @@
 ---
 name: strict-external-openclaw
-overview: Convert this repo into an IronClaw-only package that uses globally installed `openclaw` as an external runtime, with strict removal of bundled OpenClaw core source and full cutover of CLI/web flows to external contracts (CLI + gateway protocol).
+overview: Convert this repo into an DenchClaw-only package that uses globally installed `openclaw` as an external runtime, with strict removal of bundled OpenClaw core source and full cutover of CLI/web flows to external contracts (CLI + gateway protocol).
 todos:
-  - id: ironclaw-boundary-definition
-    content: Lock IronClaw-only module boundary and mark all OpenClaw-owned code paths for removal
+  - id: denchclaw-boundary-definition
+    content: Lock DenchClaw-only module boundary and mark all OpenClaw-owned code paths for removal
     status: completed
   - id: remove-cross-imports
-    content: Eliminate `apps/web` and `ui` internal imports of local OpenClaw source by replacing with IronClaw-local adapters over CLI/gateway contracts
+    content: Eliminate `apps/web` and `ui` internal imports of local OpenClaw source by replacing with DenchClaw-local adapters over CLI/gateway contracts
     status: completed
   - id: cli-delegation-cutover
-    content: Implement IronClaw command delegation to global `openclaw` for non-bootstrap commands
+    content: Implement DenchClaw command delegation to global `openclaw` for non-bootstrap commands
     status: completed
   - id: peer-global-packaging
     content: Update package metadata/docs to enforce peer + global OpenClaw installation model
@@ -18,7 +18,7 @@ todos:
     content: Remove OpenClaw core runtime source and obsolete shims/scripts from this repository
     status: completed
   - id: release-pipeline-realignment
-    content: Rework build/release checks to publish IronClaw-only artifacts with strict external OpenClaw dependency
+    content: Rework build/release checks to publish DenchClaw-only artifacts with strict external OpenClaw dependency
     status: completed
   - id: full-cutover-validation
     content: Run full test/smoke matrix and keep one-release emergency fallback
@@ -30,10 +30,10 @@ isProject: false
 
 ## Goal
 
-- Make this repository IronClaw-only.
+- Make this repository DenchClaw-only.
 - Remove OpenClaw core runtime code from this repo.
 - Depend on globally installed `openclaw` (peer/global model), not bundled source.
-- Keep IronClaw UX: `npx ironclaw` bootstrap + UI on `3100` over gateway `18789`.
+- Keep DenchClaw UX: `npx denchclaw` bootstrap + UI on `3100` over gateway `18789`.
 
 Reference upstream runtime source of truth: [openclaw/openclaw](https://github.com/openclaw/openclaw).
 
@@ -41,7 +41,7 @@ Reference upstream runtime source of truth: [openclaw/openclaw](https://github.c
 
 - No vendored OpenClaw core runtime in this repo after cutover.
 - `openclaw` consumed as global binary requirement (peer + global install), not shipped here.
-- IronClaw must communicate with OpenClaw only via stable external contracts:
+- DenchClaw must communicate with OpenClaw only via stable external contracts:
   - `openclaw` CLI commands
   - Gateway WebSocket protocol
 
@@ -49,15 +49,15 @@ Reference upstream runtime source of truth: [openclaw/openclaw](https://github.c
 
 ```mermaid
 flowchart LR
-  ironclawCli[ironclawCli] --> bootstrap[bootstrapFlow]
+  denchclawCli[denchclawCli] --> bootstrap[bootstrapFlow]
   bootstrap --> openclawBin[globalOpenclawBin]
-  ironclawUi[ironclawUi3100] --> gatewayWs[gatewayWs18789]
+  denchclawUi[denchclawUi3100] --> gatewayWs[gatewayWs18789]
   gatewayWs --> openclawRuntime[openclawRuntimeExternal]
 ```
 
-## Phase 1: Define IronClaw-Only Boundary
+## Phase 1: Define DenchClaw-Only Boundary
 
-- Keep only IronClaw-owned surfaces:
+- Keep only DenchClaw-owned surfaces:
   - product layer and branding
   - bootstrap/orchestration CLI
   - web UI and workspace UX
@@ -72,14 +72,14 @@ flowchart LR
 ## Phase 2: Replace Internal Core Imports With External Contracts
 
 - Remove all `apps/web` / `ui` imports that currently reach into local OpenClaw source internals.
-- Re-implement required behavior in IronClaw-local adapters using gateway protocol + local helpers.
+- Re-implement required behavior in DenchClaw-local adapters using gateway protocol + local helpers.
 - First critical edge:
   - [apps/web/lib/agent-runner.ts](apps/web/lib/agent-runner.ts)
 - Also migrate `ui/src/ui/**` consumers that import `../../../../src/*` internals.
 
 ## Phase 3: CLI Delegation Model
 
-- Make IronClaw CLI own only bootstrap/product UX.
+- Make DenchClaw CLI own only bootstrap/product UX.
 - Delegate non-bootstrap command execution to global `openclaw` binary.
 - Keep rollout/fallback env gates while switching default to external execution.
 - Primary files:
@@ -89,7 +89,7 @@ flowchart LR
 
 ## Phase 4: Package + Dependency Model (Peer + Global)
 
-- Update package metadata so IronClaw does not bundle OpenClaw runtime code.
+- Update package metadata so DenchClaw does not bundle OpenClaw runtime code.
 - Add peer requirement/documentation for global `openclaw` presence.
 - Ensure bootstrap validates and remediates missing global CLI (`npm i -g openclaw`).
 - Primary files:
@@ -100,7 +100,7 @@ flowchart LR
 ## Phase 5: Remove OpenClaw Core Source From Repo
 
 - Delete OpenClaw-owned runtime modules from this repository once delegation and adapters are complete.
-- Retain only IronClaw package code and tests.
+- Retain only DenchClaw package code and tests.
 - Remove obsolete build/release scripts that assume monolithic runtime shipping.
 - Primary files/areas:
   - `src/` (OpenClaw runtime portions)
@@ -109,7 +109,7 @@ flowchart LR
 
 ## Phase 6: Build/Release Pipeline Realignment
 
-- Adjust build outputs to ship IronClaw only.
+- Adjust build outputs to ship DenchClaw only.
 - Remove checks that require bundled OpenClaw dist artifacts.
 - Keep web standalone packaging + bootstrap checks.
 - Primary files:
@@ -123,10 +123,10 @@ flowchart LR
 - Unit/e2e coverage for:
   - bootstrap diagnostics and remediation
   - command delegation to global `openclaw`
-  - gateway streaming from IronClaw UI
+  - gateway streaming from DenchClaw UI
 - End-to-end smoke:
   - clean machine with only global `openclaw`
-  - `npx ironclaw` bootstrap succeeds
+  - `npx denchclaw` bootstrap succeeds
   - UI works on `3100`, gateway on `18789`, no profile/daemon collisions.
 
 ## Rollout Safety

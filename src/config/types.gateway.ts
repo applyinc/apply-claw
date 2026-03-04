@@ -274,7 +274,7 @@ export type GatewayNodesConfig = {
 };
 
 export type GatewayWebAppConfig = {
-  /** If true, the Gateway will build and serve the Ironclaw Next.js web app. Default: false. */
+  /** If true, the Gateway will build and serve the DenchClaw Next.js web app. Default: false. */
   enabled?: boolean;
   /** Port for the Next.js web app (default: 3100). */
   port?: number;
@@ -328,7 +328,7 @@ export type GatewayConfig = {
    * Only applies when trustedProxies is configured.
    */
   allowRealIpFallback?: boolean;
-  /** Ironclaw Next.js web app served alongside the gateway. */
+  /** DenchClaw Next.js web app served alongside the gateway. */
   webApp?: GatewayWebAppConfig;
   /** Tool access restrictions for HTTP /tools/invoke endpoint. */
   tools?: GatewayToolsConfig;

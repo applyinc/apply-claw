@@ -66,13 +66,13 @@ function normalizeBootstrapRolloutStage(
 export function resolveBootstrapRolloutStage(
   env: NodeJS.ProcessEnv = process.env,
 ): BootstrapRolloutStage {
-  const raw = env.IRONCLAW_BOOTSTRAP_ROLLOUT ?? env.OPENCLAW_BOOTSTRAP_ROLLOUT;
+  const raw = env.DENCHCLAW_BOOTSTRAP_ROLLOUT ?? env.OPENCLAW_BOOTSTRAP_ROLLOUT;
   return normalizeBootstrapRolloutStage(raw) ?? "default";
 }
 
 export function shouldEnableBootstrapCutover(env: NodeJS.ProcessEnv = process.env): boolean {
   if (
-    isTruthyEnvValue(env.IRONCLAW_BOOTSTRAP_LEGACY_FALLBACK) ||
+    isTruthyEnvValue(env.DENCHCLAW_BOOTSTRAP_LEGACY_FALLBACK) ||
     isTruthyEnvValue(env.OPENCLAW_BOOTSTRAP_LEGACY_FALLBACK)
   ) {
     return false;
@@ -83,7 +83,7 @@ export function shouldEnableBootstrapCutover(env: NodeJS.ProcessEnv = process.en
   }
   if (stage === "beta") {
     return (
-      isTruthyEnvValue(env.IRONCLAW_BOOTSTRAP_BETA_OPT_IN) ||
+      isTruthyEnvValue(env.DENCHCLAW_BOOTSTRAP_BETA_OPT_IN) ||
       isTruthyEnvValue(env.OPENCLAW_BOOTSTRAP_BETA_OPT_IN)
     );
   }
@@ -100,7 +100,7 @@ export function rewriteBareArgvToBootstrap(
   if (getPrimaryCommand(argv)) {
     return argv;
   }
-  if (resolveCliName(argv) !== "ironclaw") {
+  if (resolveCliName(argv) !== "denchclaw") {
     return argv;
   }
   if (!shouldEnableBootstrapCutover(env)) {
@@ -111,7 +111,7 @@ export function rewriteBareArgvToBootstrap(
 
 function isDelegationDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return (
-    isTruthyEnvValue(env.IRONCLAW_DISABLE_OPENCLAW_DELEGATION) ||
+    isTruthyEnvValue(env.DENCHCLAW_DISABLE_OPENCLAW_DELEGATION) ||
     isTruthyEnvValue(env.OPENCLAW_DISABLE_OPENCLAW_DELEGATION)
   );
 }
@@ -132,7 +132,7 @@ export function shouldDelegateToGlobalOpenClaw(
 
 async function delegateToGlobalOpenClaw(argv: string[]): Promise<number> {
   if (
-    isTruthyEnvValue(process.env.IRONCLAW_DELEGATED) ||
+    isTruthyEnvValue(process.env.DENCHCLAW_DELEGATED) ||
     isTruthyEnvValue(process.env.OPENCLAW_DELEGATED)
   ) {
     throw new Error(
@@ -145,7 +145,7 @@ async function delegateToGlobalOpenClaw(argv: string[]): Promise<number> {
       stdio: "inherit",
       env: {
         ...process.env,
-        IRONCLAW_DELEGATED: "1",
+        DENCHCLAW_DELEGATED: "1",
         OPENCLAW_DELEGATED: "1",
       },
     });
@@ -186,12 +186,12 @@ export async function runCli(argv: string[] = process.argv) {
   // Enforce the minimum supported runtime before doing any work.
   assertSupportedRuntime();
 
-  // Show the animated Ironclaw banner early so it appears for ALL invocations
-  // (bare `ironclaw`, subcommands, help, etc.). The bannerEmitted flag inside
+  // Show the animated DenchClaw banner early so it appears for ALL invocations
+  // (bare `denchclaw`, subcommands, help, etc.). The bannerEmitted flag inside
   // emitCliBanner prevents double-emission from the route / preAction hooks.
   const commandPath = getCommandPath(normalizedArgv, 2);
   const hideBanner =
-    isTruthyEnvValue(process.env.IRONCLAW_HIDE_BANNER) ||
+    isTruthyEnvValue(process.env.DENCHCLAW_HIDE_BANNER) ||
     isTruthyEnvValue(process.env.OPENCLAW_HIDE_BANNER) ||
     commandPath[0] === "update" ||
     commandPath[0] === "completion" ||

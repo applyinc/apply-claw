@@ -3,8 +3,8 @@ import path from "node:path";
 import { resolveRequiredHomeDir } from "../infra/home-dir.js";
 import { isValidProfileName } from "./profile-utils.js";
 
-export const IRONCLAW_PROFILE = "ironclaw";
-const IRONCLAW_STATE_DIRNAME = ".openclaw-ironclaw";
+export const DENCHCLAW_PROFILE = "dench";
+const DENCHCLAW_STATE_DIRNAME = ".openclaw-dench";
 
 export type CliProfileParseResult =
   | { ok: true; profile: string | null; argv: string[] }
@@ -89,7 +89,7 @@ function resolveProfileStateDir(
 ): string {
   return path.join(
     resolveRequiredHomeDir(env as NodeJS.ProcessEnv, homedir),
-    IRONCLAW_STATE_DIRNAME,
+    DENCHCLAW_STATE_DIRNAME,
   );
 }
 
@@ -106,9 +106,9 @@ export function applyCliProfileEnv(params: {
   const env = params.env ?? (process.env as Record<string, string | undefined>);
   const homedir = params.homedir ?? os.homedir;
   const requestedProfile = (params.profile?.trim() || env.OPENCLAW_PROFILE?.trim() || null) ?? null;
-  const profile = IRONCLAW_PROFILE;
+  const profile = DENCHCLAW_PROFILE;
 
-  // Ironclaw always runs in the pinned profile/state path.
+  // DenchClaw always runs in the pinned profile/state path.
   env.OPENCLAW_PROFILE = profile;
 
   const stateDir = resolveProfileStateDir(env, homedir);
@@ -117,7 +117,7 @@ export function applyCliProfileEnv(params: {
 
   const warning =
     requestedProfile && requestedProfile !== profile
-      ? `Ignoring requested profile '${requestedProfile}'; Ironclaw always uses --profile ${IRONCLAW_PROFILE}.`
+      ? `Ignoring requested profile '${requestedProfile}'; DenchClaw always uses --profile ${DENCHCLAW_PROFILE}.`
       : undefined;
 
   return {

@@ -10,7 +10,7 @@ title: "Updating"
 
 OpenClaw is moving fast (pre “1.0”). Treat updates like shipping infra: update → run checks → restart (or use `openclaw update`, which restarts) → verify.
 
-If you run **IronClaw** as a frontend package, keep OpenClaw installed globally (`npm i -g openclaw`) and update OpenClaw separately; IronClaw delegates runtime commands to that global OpenClaw install.
+If you run **DenchClaw** as a frontend package, keep OpenClaw installed globally (`npm i -g openclaw`) and update OpenClaw separately; DenchClaw delegates runtime commands to that global OpenClaw install.
 
 ## Recommended: re-run the website installer (upgrade in place)
 

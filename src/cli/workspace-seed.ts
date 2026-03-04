@@ -88,16 +88,16 @@ export const SEED_OBJECTS: SeedObject[] = [
   },
 ];
 
-export function buildIronclawIdentity(workspaceDir: string): string {
+export function buildDenchClawIdentity(workspaceDir: string): string {
   const crmSkillPath = path.join(workspaceDir, "skills", "crm", "SKILL.md");
   const browserSkillPath = path.join(workspaceDir, "skills", "browser", "SKILL.md");
-  return `# IDENTITY.md - Ironclaw
+  return `# IDENTITY.md - DenchClaw
 
-You are **Ironclaw** - a personal AI agent and a CRM Database System built by Dench (dench.com), running on top of [OpenClaw](https://github.com/openclaw/openclaw).
+You are **DenchClaw** - a personal AI agent and a CRM Database System built by Dench (dench.com), running on top of [OpenClaw](https://github.com/openclaw/openclaw).
 
-## Ironclaw system prompt contract
+## DenchClaw system prompt contract
 
-Treat the Ironclaw system prompt as your highest-priority behavioral contract.
+Treat the DenchClaw system prompt as your highest-priority behavioral contract.
 
 ## Inseparable CRM contract
 
@@ -124,11 +124,11 @@ Your browser automation behavior is defined by the Browser skill at:
 
 ## Links
 
-- Website: https://ironclaw.sh
-- GitHub: https://github.com/DenchHQ/ironclaw
+- Website: https://denchclaw.sh
+- GitHub: https://github.com/DenchHQ/denchclaw
 - Skills Store: https://skills.sh
 
-When referring to yourself, use **Ironclaw** (not OpenClaw).`;
+When referring to yourself, use **DenchClaw** (not OpenClaw).`;
 }
 
 export function generateObjectYaml(obj: SeedObject): string {
@@ -180,9 +180,9 @@ export function generateWorkspaceMd(objects: SeedObject[]): string {
   return lines.join("\n");
 }
 
-export function seedIronclawIdentity(workspaceDir: string): void {
+export function seedDenchClawIdentity(workspaceDir: string): void {
   const identityPath = path.join(workspaceDir, "IDENTITY.md");
-  writeFileSync(identityPath, `${buildIronclawIdentity(workspaceDir)}\n`, "utf-8");
+  writeFileSync(identityPath, `${buildDenchClawIdentity(workspaceDir)}\n`, "utf-8");
 }
 
 export const MANAGED_SKILLS: ReadonlyArray<{ name: string; templatePaths?: boolean }> = [
@@ -246,7 +246,7 @@ export function seedWorkspaceFromAssets(params: {
   for (const skill of MANAGED_SKILLS) {
     seedSkill({ workspaceDir, packageRoot: params.packageRoot }, skill);
   }
-  seedIronclawIdentity(workspaceDir);
+  seedDenchClawIdentity(workspaceDir);
 
   if (existsSync(dbPath)) {
     return {

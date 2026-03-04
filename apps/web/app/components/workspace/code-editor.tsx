@@ -99,7 +99,7 @@ function registerThemes(monaco: typeof import("monaco-editor")) {
 	if (themesRegistered) {return;}
 	themesRegistered = true;
 
-	monaco.editor.defineTheme("ironclaw-light", {
+	monaco.editor.defineTheme("denchclaw-light", {
 		base: "vs",
 		inherit: true,
 		rules: [],
@@ -136,7 +136,7 @@ function registerThemes(monaco: typeof import("monaco-editor")) {
 		},
 	});
 
-	monaco.editor.defineTheme("ironclaw-dark", {
+	monaco.editor.defineTheme("denchclaw-dark", {
 		base: "vs-dark",
 		inherit: true,
 		rules: [],
@@ -205,7 +205,7 @@ type SaveState = "clean" | "dirty" | "saving" | "saved" | "error";
 function EditorInner({ content, filename, filePath, className }: CodeEditorProps) {
 	const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
 	const monacoRef = useRef<typeof import("monaco-editor") | null>(null);
-	const [theme, setTheme] = useState<string>(isDarkMode() ? "ironclaw-dark" : "ironclaw-light");
+	const [theme, setTheme] = useState<string>(isDarkMode() ? "denchclaw-dark" : "denchclaw-light");
 	const [saveState, setSaveState] = useState<SaveState>("clean");
 	const [cursorPos, setCursorPos] = useState({ line: 1, col: 1 });
 	const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -221,7 +221,7 @@ function EditorInner({ content, filename, filePath, className }: CodeEditorProps
 	// Watch for theme changes via MutationObserver on <html> class
 	useEffect(() => {
 		const html = document.documentElement;
-		const update = () => setTheme(isDarkMode() ? "ironclaw-dark" : "ironclaw-light");
+		const update = () => setTheme(isDarkMode() ? "denchclaw-dark" : "denchclaw-light");
 		const observer = new MutationObserver(update);
 		observer.observe(html, { attributes: true, attributeFilter: ["class"] });
 		return () => observer.disconnect();
@@ -253,7 +253,7 @@ function EditorInner({ content, filename, filePath, className }: CodeEditorProps
 		editorRef.current = ed;
 		monacoRef.current = monaco;
 		registerThemes(monaco);
-		monaco.editor.setTheme(isDarkMode() ? "ironclaw-dark" : "ironclaw-light");
+		monaco.editor.setTheme(isDarkMode() ? "denchclaw-dark" : "denchclaw-light");
 
 		// Cmd+S / Ctrl+S save
 		ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {

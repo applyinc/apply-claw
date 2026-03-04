@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ironclaw",
+  title: "DenchClaw",
   description:
     "AI Workspace with an agent that connects to your apps and does the work for you",
 };

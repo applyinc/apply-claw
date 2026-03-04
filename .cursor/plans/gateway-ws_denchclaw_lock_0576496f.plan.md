@@ -1,6 +1,6 @@
 ---
-name: gateway-ws ironclaw lock
-overview: Migrate `apps/web` chat transport from CLI `--stream-json` processes to Gateway WebSocket while preserving the existing SSE API contract, then lock web to a single `ironclaw` profile and disable workspace/profile switching (403 for disabled APIs). Add targeted web and bootstrap tests for the new behavior.
+name: gateway-ws denchclaw lock
+overview: Migrate `apps/web` chat transport from CLI `--stream-json` processes to Gateway WebSocket while preserving the existing SSE API contract, then lock web to a single `denchclaw` profile and disable workspace/profile switching (403 for disabled APIs). Add targeted web and bootstrap tests for the new behavior.
 todos:
   - id: ws-transport-adapter
     content: Implement Gateway WebSocket-backed AgentProcessHandle adapter in apps/web/lib/agent-runner.ts while keeping existing NDJSON event contract.
@@ -9,19 +9,19 @@ todos:
     content: Swap abort and subagent follow-up CLI gateway calls to WebSocket RPC calls in active-runs/subagent-runs.
     status: completed
   - id: profile-default-lock
-    content: Default web runtime profile resolution to ironclaw in workspace.ts and ensure state/web-chat/workspace paths resolve under ~/.openclaw-ironclaw.
+    content: Default web runtime profile resolution to denchclaw in workspace.ts and ensure state/web-chat/workspace paths resolve under ~/.openclaw-denchclaw.
     status: completed
   - id: api-lockdown
-    content: Return 403 for profile/workspace mutation APIs and keep /api/profiles compatible with a single ironclaw profile payload.
+    content: Return 403 for profile/workspace mutation APIs and keep /api/profiles compatible with a single denchclaw profile payload.
     status: completed
   - id: ui-single-profile
     content: Remove profile switch/create workspace controls from sidebars and empty state; clean workspace page wiring accordingly.
     status: completed
   - id: dench-path-update
-    content: Update skills/dench/SKILL.md workspace path references to ~/.openclaw-ironclaw/workspace.
+    content: Update skills/dench/SKILL.md workspace path references to ~/.openclaw-denchclaw/workspace.
     status: completed
   - id: web-tests
-    content: Update/add apps/web tests covering WS transport behavior, API lock responses, and ironclaw path resolution.
+    content: Update/add apps/web tests covering WS transport behavior, API lock responses, and denchclaw path resolution.
     status: completed
   - id: bootstrap-tests
     content: Add src/cli tests for run-main bootstrap cutover logic and bootstrap-external diagnostics behavior.
@@ -29,13 +29,13 @@ todos:
 isProject: false
 ---
 
-# Migrate Web Chat to Gateway WS + Lock Ironclaw Profile
+# Migrate Web Chat to Gateway WS + Lock DenchClaw Profile
 
 ## Final behavior
 
 - Keep frontend transport unchanged (`/api/chat` + `/api/chat/stream` SSE contract remains intact).
 - Replace backend CLI stream/process transport with Gateway WebSocket transport.
-- Force single-profile behavior in web runtime (`ironclaw`), so workspace/chat/session paths resolve to `~/.openclaw-ironclaw/*`.
+- Force single-profile behavior in web runtime (`denchclaw`), so workspace/chat/session paths resolve to `~/.openclaw-denchclaw/*`.
 - Disable profile/workspace mutation endpoints with `403` (`/api/profiles/switch`, `/api/workspace/init`).
 - Remove/disable UI controls for profile switching and workspace creation.
 
@@ -53,16 +53,16 @@ isProject: false
 
 ## Profile/path locking
 
-- Update profile resolution in `[apps/web/lib/workspace.ts](apps/web/lib/workspace.ts)` so web runtime defaults to `ironclaw` (without changing test-mode assumptions), ensuring state dir resolves to `~/.openclaw-ironclaw` unless explicitly overridden.
+- Update profile resolution in `[apps/web/lib/workspace.ts](apps/web/lib/workspace.ts)` so web runtime defaults to `denchclaw` (without changing test-mode assumptions), ensuring state dir resolves to `~/.openclaw-denchclaw` unless explicitly overridden.
 - Keep filesystem resolvers (`resolveOpenClawStateDir`, `resolveWebChatDir`, `resolveWorkspaceRoot`) as the single source of truth used by chat/session/tree APIs.
-- Update watcher ignore path in `[apps/web/next.config.ts](apps/web/next.config.ts)` to include ironclaw state dir.
+- Update watcher ignore path in `[apps/web/next.config.ts](apps/web/next.config.ts)` to include denchclaw state dir.
 
 ## Disable profile/workspace mutation surfaces
 
 - Return `403` in:
   - `[apps/web/app/api/profiles/switch/route.ts](apps/web/app/api/profiles/switch/route.ts)`
   - `[apps/web/app/api/workspace/init/route.ts](apps/web/app/api/workspace/init/route.ts)`
-- Make `[apps/web/app/api/profiles/route.ts](apps/web/app/api/profiles/route.ts)` return a single effective `ironclaw` profile payload for UI compatibility.
+- Make `[apps/web/app/api/profiles/route.ts](apps/web/app/api/profiles/route.ts)` return a single effective `denchclaw` profile payload for UI compatibility.
 
 ## UI updates (single-profile UX)
 
@@ -75,7 +75,7 @@ isProject: false
 
 ## Dench skill path update
 
-- Replace `~/.openclaw/workspace` references with `~/.openclaw-ironclaw/workspace` in `[skills/dench/SKILL.md](skills/dench/SKILL.md)`.
+- Replace `~/.openclaw/workspace` references with `~/.openclaw-denchclaw/workspace` in `[skills/dench/SKILL.md](skills/dench/SKILL.md)`.
 
 ## Tests to add/update
 
@@ -86,7 +86,7 @@ isProject: false
   - update `[apps/web/app/api/profiles/route.test.ts](apps/web/app/api/profiles/route.test.ts)` for single-profile payload and `403` switch behavior.
   - update `[apps/web/app/api/workspace/init/route.test.ts](apps/web/app/api/workspace/init/route.test.ts)` for `403` lock behavior.
 - Path behavior tests:
-  - add/adjust targeted assertions in workspace resolver tests for ironclaw state/web-chat/workspace directories.
+  - add/adjust targeted assertions in workspace resolver tests for denchclaw state/web-chat/workspace directories.
 - Bootstrap tests (new):
   - add `src/cli` tests for rollout/cutover behavior in `[src/cli/run-main.ts](src/cli/run-main.ts)`.
   - add diagnostics/rollout gate tests for `[src/cli/bootstrap-external.ts](src/cli/bootstrap-external.ts)` exported helpers.
@@ -109,4 +109,4 @@ sse --> chatPanel
 
 - Run web tests for changed areas (`agent-runner`, `active-runs`, chat API, profiles/workspace-init API).
 - Run bootstrap-focused tests for `src/cli/run-main.ts` and `src/cli/bootstrap-external.ts`.
-- Smoke-check workspace tree and web sessions resolve under `~/.openclaw-ironclaw` with switching/creation controls disabled.
+- Smoke-check workspace tree and web sessions resolve under `~/.openclaw-denchclaw` with switching/creation controls disabled.

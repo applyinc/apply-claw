@@ -19,7 +19,7 @@ export const isNixMode = resolveIsNixMode();
 
 // Support historical (and occasionally misspelled) legacy state dirs.
 const LEGACY_STATE_DIRNAMES = [".clawdbot", ".moldbot", ".moltbot"] as const;
-const NEW_STATE_DIRNAME = ".openclaw-ironclaw";
+const NEW_STATE_DIRNAME = ".openclaw-dench";
 const CONFIG_FILENAME = "openclaw.json";
 const LEGACY_CONFIG_FILENAMES = ["clawdbot.json", "moldbot.json", "moltbot.json"] as const;
 
@@ -54,7 +54,7 @@ export function resolveNewStateDir(homedir: () => string = resolveDefaultHomeDir
 
 /**
  * State directory for mutable data (sessions, logs, caches).
- * Ironclaw always pins this to ~/.openclaw-ironclaw.
+ * DenchClaw always pins this to ~/.openclaw-dench.
  */
 export function resolveStateDir(
   env: NodeJS.ProcessEnv = process.env,

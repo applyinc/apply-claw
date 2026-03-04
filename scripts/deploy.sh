@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deploy.sh — build and publish ironclaw to npm
+# deploy.sh — build and publish denchclaw to npm
 #
 # Versioning convention (mirrors upstream openclaw tags):
 #   --upstream <ver>  Sync to an upstream release version.
@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-PACKAGE_NAME="ironclaw"
+PACKAGE_NAME="denchclaw"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -188,7 +188,7 @@ fi
 
 # ── build ────────────────────────────────────────────────────────────────────
 
-# The `prepack` script (triggered by `npm publish`) runs the IronClaw build chain:
+# The `prepack` script (triggered by `npm publish`) runs the DenchClaw build chain:
 #   pnpm build && pnpm web:build && pnpm web:prepack
 # Running `pnpm build` here is a redundant fail-fast: catch CLI build errors
 # before committing to a publish attempt.
@@ -203,7 +203,7 @@ fi
 # ── publish ──────────────────────────────────────────────────────────────────
 
 # Always tag as "latest" — npm skips the latest tag for prerelease versions
-# by default, but we want `npm i -g ironclaw` to always resolve to
+# by default, but we want `npm i -g denchclaw` to always resolve to
 # the most recently published version.
 echo "publishing ${PACKAGE_NAME}@${VERSION}..."
 npm publish --access public --tag latest "${NPM_FLAGS[@]}"

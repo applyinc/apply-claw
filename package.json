@@ -1,5 +1,5 @@
 {
-  "name": "ironclaw",
+  "name": "denchclaw",
   "version": "2026.2.22-1.1",
   "description": "AI-powered CRM platform with multi-channel agent gateway, DuckDB workspace, and knowledge management",
   "keywords": [],
@@ -14,7 +14,8 @@
     "url": "git+https://github.com/openclaw/openclaw.git"
   },
   "bin": {
-    "ironclaw": "openclaw.mjs"
+    "dench": "openclaw.mjs",
+    "denchclaw": "openclaw.mjs"
   },
   "directories": {
     "doc": "docs",
@@ -57,6 +58,8 @@
     "deadcode:report:ci:ts-unused": "mkdir -p .artifacts/deadcode && pnpm deadcode:ts-unused > .artifacts/deadcode/ts-unused-exports.txt 2>&1 || true",
     "deadcode:ts-prune": "pnpm dlx ts-prune src extensions scripts",
     "deadcode:ts-unused": "pnpm dlx ts-unused-exports tsconfig.json --ignoreTestFiles --exitWithCount",
+    "denchclaw": "node scripts/run-node.mjs",
+    "denchclaw:rpc": "node scripts/run-node.mjs agent --mode rpc --json",
     "dev": "node scripts/run-node.mjs",
     "docs:bin": "node scripts/build-docs-list.mjs",
     "docs:check-links": "node scripts/docs-link-audit.mjs",
@@ -79,8 +82,6 @@
     "ios:gen": "bash -lc './scripts/ios-configure-signing.sh && cd apps/ios && xcodegen generate'",
     "ios:open": "bash -lc './scripts/ios-configure-signing.sh && cd apps/ios && xcodegen generate && open OpenClaw.xcodeproj'",
     "ios:run": "bash -lc './scripts/ios-configure-signing.sh && cd apps/ios && xcodegen generate && xcodebuild -project OpenClaw.xcodeproj -scheme OpenClaw -destination \"${IOS_DEST:-platform=iOS Simulator,name=iPhone 17}\" -configuration Debug build && xcrun simctl boot \"${IOS_SIM:-iPhone 17}\" || true && xcrun simctl launch booted ai.openclaw.ios'",
-    "ironclaw": "node scripts/run-node.mjs",
-    "ironclaw:rpc": "node scripts/run-node.mjs agent --mode rpc --json",
     "lint": "oxlint --type-aware",
     "lint:all": "pnpm lint && pnpm lint:swift",
     "lint:docs": "pnpm dlx markdownlint-cli2",

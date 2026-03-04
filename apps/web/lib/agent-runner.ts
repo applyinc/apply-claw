@@ -359,10 +359,10 @@ export function buildConnectParams(
 			version: "dev",
 			platform: process.platform,
 			mode: clientMode,
-			instanceId: "ironclaw-web-server",
+			instanceId: "denchclaw-web-server",
 		},
 		locale: "en-US",
-		userAgent: "ironclaw-web",
+		userAgent: "denchclaw-web",
 		role: "operator",
 		scopes: ["operator.read", "operator.write", "operator.admin"],
 		caps,
@@ -880,7 +880,7 @@ class GatewayProcessHandle
 }
 
 function shouldForceLegacyStream(): boolean {
-	const raw = process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM?.trim().toLowerCase();
+	const raw = process.env.DENCHCLAW_WEB_FORCE_LEGACY_STREAM?.trim().toLowerCase();
 	return raw === "1" || raw === "true" || raw === "yes";
 }
 
@@ -1285,7 +1285,7 @@ export async function runAgent(
 		child.stderr?.on("data", (chunk: Buffer) => {
 			const text = chunk.toString();
 			stderrChunks.push(text);
-			console.error("[ironclaw stderr]", text);
+			console.error("[denchclaw stderr]", text);
 		});
 	});
 }

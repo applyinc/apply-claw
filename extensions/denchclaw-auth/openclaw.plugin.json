@@ -1,6 +1,6 @@
 {
-  "id": "ironclaw-auth",
-  "providers": ["ironclaw"],
+  "id": "denchclaw-auth",
+  "providers": ["denchclaw"],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

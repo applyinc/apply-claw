@@ -6,7 +6,7 @@ const RESPONSE_PAGE = `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Ironclaw OAuth</title>
+    <title>DenchClaw OAuth</title>
   </head>
   <body>
     <main>
@@ -16,7 +16,7 @@ const RESPONSE_PAGE = `<!DOCTYPE html>
   </body>
 </html>`;
 
-export type IronclawOAuthConfig = {
+export type DenchClawOAuthConfig = {
   clientId: string;
   clientSecret?: string;
   authUrl: string;
@@ -26,14 +26,14 @@ export type IronclawOAuthConfig = {
   userInfoUrl?: string;
 };
 
-export type IronclawOAuthCredentials = {
+export type DenchClawOAuthCredentials = {
   access: string;
   refresh: string;
   expires: number;
   email?: string;
 };
 
-export type IronclawOAuthContext = {
+export type DenchClawOAuthContext = {
   isRemote: boolean;
   openUrl: (url: string) => Promise<void>;
   log: (message: string) => void;
@@ -65,11 +65,11 @@ function normalizeUrl(value: string, fieldName: string): string {
 }
 
 function buildAuthUrl(params: {
-  config: IronclawOAuthConfig;
+  config: DenchClawOAuthConfig;
   challenge: string;
   state: string;
 }): string {
-  const authUrl = normalizeUrl(params.config.authUrl, "IRONCLAW_OAUTH_AUTH_URL");
+  const authUrl = normalizeUrl(params.config.authUrl, "DENCHCLAW_OAUTH_AUTH_URL");
   const url = new URL(authUrl);
   url.searchParams.set("client_id", params.config.clientId);
   url.searchParams.set("response_type", "code");
@@ -112,7 +112,7 @@ function parseCallbackInput(
 }
 
 async function startCallbackServer(params: { redirectUri: string; timeoutMs: number }) {
-  const redirect = new URL(normalizeUrl(params.redirectUri, "IRONCLAW_OAUTH_REDIRECT_URI"));
+  const redirect = new URL(normalizeUrl(params.redirectUri, "DENCHCLAW_OAUTH_REDIRECT_URI"));
   const port = redirect.port ? Number(redirect.port) : 80;
   const host =
     redirect.hostname === "localhost" || redirect.hostname === "127.0.0.1"
@@ -189,11 +189,11 @@ async function startCallbackServer(params: { redirectUri: string; timeoutMs: num
 }
 
 async function exchangeCode(params: {
-  config: IronclawOAuthConfig;
+  config: DenchClawOAuthConfig;
   code: string;
   verifier: string;
-}): Promise<IronclawOAuthCredentials> {
-  const tokenUrl = normalizeUrl(params.config.tokenUrl, "IRONCLAW_OAUTH_TOKEN_URL");
+}): Promise<DenchClawOAuthCredentials> {
+  const tokenUrl = normalizeUrl(params.config.tokenUrl, "DENCHCLAW_OAUTH_TOKEN_URL");
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code: params.code,
@@ -240,7 +240,7 @@ async function exchangeCode(params: {
 }
 
 async function fetchUserEmail(
-  config: IronclawOAuthConfig,
+  config: DenchClawOAuthConfig,
   accessToken: string,
 ): Promise<string | undefined> {
   if (!config.userInfoUrl?.trim()) {
@@ -248,7 +248,7 @@ async function fetchUserEmail(
   }
   let url: string;
   try {
-    url = normalizeUrl(config.userInfoUrl, "IRONCLAW_OAUTH_USERINFO_URL");
+    url = normalizeUrl(config.userInfoUrl, "DENCHCLAW_OAUTH_USERINFO_URL");
   } catch {
     return undefined;
   }
@@ -270,10 +270,10 @@ async function fetchUserEmail(
   }
 }
 
-export async function loginIronclawOAuth(
-  ctx: IronclawOAuthContext,
-  config: IronclawOAuthConfig,
-): Promise<IronclawOAuthCredentials> {
+export async function loginDenchClawOAuth(
+  ctx: DenchClawOAuthContext,
+  config: DenchClawOAuthConfig,
+): Promise<DenchClawOAuthCredentials> {
   const { verifier, challenge } = generatePkce();
   const state = randomBytes(16).toString("hex");
   const authUrl = buildAuthUrl({ config, challenge, state });
@@ -300,14 +300,14 @@ export async function loginIronclawOAuth(
         `Auth URL: ${authUrl}`,
         `Redirect URI: ${config.redirectUri}`,
       ].join("\n"),
-      "Ironclaw OAuth",
+      "DenchClaw OAuth",
     );
     ctx.log("");
     ctx.log("Copy this URL:");
     ctx.log(authUrl);
     ctx.log("");
   } else {
-    ctx.progress.update("Opening Ironclaw sign-in...");
+    ctx.progress.update("Opening DenchClaw sign-in...");
     try {
       await ctx.openUrl(authUrl);
     } catch {

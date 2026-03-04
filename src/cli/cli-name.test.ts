@@ -4,7 +4,7 @@ import { DEFAULT_CLI_NAME, replaceCliName, resolveCliName } from "./cli-name.js"
 describe("cli-name", () => {
   it("resolves known CLI names from argv[1]", () => {
     expect(resolveCliName(["node", "openclaw"])).toBe("openclaw");
-    expect(resolveCliName(["node", "ironclaw"])).toBe("ironclaw");
+    expect(resolveCliName(["node", "denchclaw"])).toBe("denchclaw");
     expect(resolveCliName(["node", "/usr/local/bin/openclaw"])).toBe("openclaw");
   });
 
@@ -13,13 +13,13 @@ describe("cli-name", () => {
   });
 
   it("replaces CLI name in command prefixes while preserving package runner prefix", () => {
-    expect(replaceCliName("openclaw status", "ironclaw")).toBe("ironclaw status");
-    expect(replaceCliName("pnpm openclaw status", "ironclaw")).toBe("pnpm ironclaw status");
-    expect(replaceCliName("npx ironclaw status", "openclaw")).toBe("npx openclaw status");
+    expect(replaceCliName("openclaw status", "denchclaw")).toBe("denchclaw status");
+    expect(replaceCliName("pnpm openclaw status", "denchclaw")).toBe("pnpm denchclaw status");
+    expect(replaceCliName("npx denchclaw status", "openclaw")).toBe("npx openclaw status");
   });
 
   it("keeps command unchanged when it does not start with a known CLI prefix", () => {
-    expect(replaceCliName("echo openclaw status", "ironclaw")).toBe("echo openclaw status");
+    expect(replaceCliName("echo openclaw status", "denchclaw")).toBe("echo openclaw status");
     expect(replaceCliName("   ", "openclaw")).toBe("   ");
   });
 });

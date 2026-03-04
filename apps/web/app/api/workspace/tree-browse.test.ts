@@ -17,7 +17,7 @@ vi.mock("node:os", () => ({
 // Mock workspace
 vi.mock("@/lib/workspace", () => ({
   resolveWorkspaceRoot: vi.fn(() => null),
-  resolveOpenClawStateDir: vi.fn(() => "/home/testuser/.openclaw-ironclaw"),
+  resolveOpenClawStateDir: vi.fn(() => "/home/testuser/.openclaw-dench"),
   getActiveWorkspaceName: vi.fn(() => null),
   parseSimpleYaml: vi.fn(() => ({})),
   duckdbQueryAll: vi.fn(() => []),
@@ -57,7 +57,7 @@ describe("Workspace Tree & Browse API", () => {
     }));
     vi.mock("@/lib/workspace", () => ({
       resolveWorkspaceRoot: vi.fn(() => null),
-      resolveOpenClawStateDir: vi.fn(() => "/home/testuser/.openclaw-ironclaw"),
+      resolveOpenClawStateDir: vi.fn(() => "/home/testuser/.openclaw-dench"),
       getActiveWorkspaceName: vi.fn(() => null),
       parseSimpleYaml: vi.fn(() => ({})),
       duckdbQueryAll: vi.fn(() => []),

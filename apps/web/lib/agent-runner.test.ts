@@ -272,7 +272,7 @@ describe("agent-runner", () => {
 	describe("spawnAgentProcess", () => {
 		it("connects via ws module with Origin header matching the gateway URL (prevents origin rejection)", async () => {
 			const MockWs = installMockWsModule();
-			delete process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM;
+			delete process.env.DENCHCLAW_WEB_FORCE_LEGACY_STREAM;
 			const { spawnAgentProcess } = await import("./agent-runner.js");
 
 			const proc = spawnAgentProcess("hello", "sess-1");
@@ -298,7 +298,7 @@ describe("agent-runner", () => {
 
 		it("sets wss: origin to https: (prevents origin mismatch on TLS gateways)", async () => {
 			const MockWs = installMockWsModule();
-			delete process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM;
+			delete process.env.DENCHCLAW_WEB_FORCE_LEGACY_STREAM;
 			process.env.OPENCLAW_GATEWAY_URL = "wss://gateway.example.com:443";
 			const { spawnAgentProcess } = await import("./agent-runner.js");
 
@@ -313,7 +313,7 @@ describe("agent-runner", () => {
 
 		it("falls back to config gateway port when env port is stale", async () => {
 			const MockWs = installMockWsModule();
-			delete process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM;
+			delete process.env.DENCHCLAW_WEB_FORCE_LEGACY_STREAM;
 			process.env.OPENCLAW_GATEWAY_PORT = "19001";
 			MockWs.failOpenForUrls.add("ws://127.0.0.1:19001/");
 
@@ -342,7 +342,7 @@ describe("agent-runner", () => {
 
 		it("does not use child_process.spawn for WebSocket transport", async () => {
 			installMockWsModule();
-			delete process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM;
+			delete process.env.DENCHCLAW_WEB_FORCE_LEGACY_STREAM;
 			const { spawn: mockSpawn } = await import("node:child_process");
 			vi.mocked(mockSpawn).mockClear();
 			const { spawnAgentProcess } = await import("./agent-runner.js");
@@ -354,8 +354,8 @@ describe("agent-runner", () => {
 			proc.kill("SIGTERM");
 		});
 
-		it("falls back to CLI spawn when IRONCLAW_WEB_FORCE_LEGACY_STREAM is set", async () => {
-			process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM = "1";
+		it("falls back to CLI spawn when DENCHCLAW_WEB_FORCE_LEGACY_STREAM is set", async () => {
+			process.env.DENCHCLAW_WEB_FORCE_LEGACY_STREAM = "1";
 			const { spawn: mockSpawn } = await import("node:child_process");
 			const child = mockChildProcess();
 			vi.mocked(mockSpawn).mockReturnValue(child as unknown as ChildProcess);
@@ -373,7 +373,7 @@ describe("agent-runner", () => {
 		});
 
 		it("includes session-key and lane args in legacy CLI mode", async () => {
-			process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM = "1";
+			process.env.DENCHCLAW_WEB_FORCE_LEGACY_STREAM = "1";
 			const { spawn: mockSpawn } = await import("node:child_process");
 			const child = mockChildProcess();
 			vi.mocked(mockSpawn).mockReturnValue(child as unknown as ChildProcess);
@@ -399,7 +399,7 @@ describe("agent-runner", () => {
 	describe("spawnAgentSubscribeProcess", () => {
 		it("subscribes via connect -> sessions.patch -> agent.subscribe", async () => {
 			const MockWs = installMockWsModule();
-			delete process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM;
+			delete process.env.DENCHCLAW_WEB_FORCE_LEGACY_STREAM;
 			const { spawnAgentSubscribeProcess } = await import("./agent-runner.js");
 
 			const proc = spawnAgentSubscribeProcess("agent:main:web:sess-sub", 12);
@@ -426,7 +426,7 @@ describe("agent-runner", () => {
 
 		it("uses payload.globalSeq (not frame seq) for cursor filtering", async () => {
 			const MockWs = installMockWsModule();
-			delete process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM;
+			delete process.env.DENCHCLAW_WEB_FORCE_LEGACY_STREAM;
 			const { spawnAgentSubscribeProcess } = await import("./agent-runner.js");
 
 			const proc = spawnAgentSubscribeProcess("agent:main:web:sess-gseq", 5);
@@ -489,7 +489,7 @@ describe("agent-runner", () => {
 
 		it("keeps subscribe workers alive across lifecycle end events", async () => {
 			const MockWs = installMockWsModule();
-			delete process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM;
+			delete process.env.DENCHCLAW_WEB_FORCE_LEGACY_STREAM;
 			const { spawnAgentSubscribeProcess } = await import("./agent-runner.js");
 
 			const proc = spawnAgentSubscribeProcess("agent:main:web:sess-sticky", 0);
@@ -545,7 +545,7 @@ describe("agent-runner", () => {
 
 		it("drops subscribe events missing a matching session key", async () => {
 			const MockWs = installMockWsModule();
-			delete process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM;
+			delete process.env.DENCHCLAW_WEB_FORCE_LEGACY_STREAM;
 			const { spawnAgentSubscribeProcess } = await import("./agent-runner.js");
 
 			const proc = spawnAgentSubscribeProcess("agent:main:web:sess-filter", 0);
@@ -602,7 +602,7 @@ describe("agent-runner", () => {
 				ok: false,
 				error: { message: "unknown method: agent.subscribe" },
 			});
-			delete process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM;
+			delete process.env.DENCHCLAW_WEB_FORCE_LEGACY_STREAM;
 			const { spawnAgentSubscribeProcess } = await import("./agent-runner.js");
 
 			const proc = spawnAgentSubscribeProcess("agent:main:web:sess-passive", 0);
@@ -643,7 +643,7 @@ describe("agent-runner", () => {
 				ok: false,
 				error: { message: "unknown method: agent.subscribe" },
 			});
-			delete process.env.IRONCLAW_WEB_FORCE_LEGACY_STREAM;
+			delete process.env.DENCHCLAW_WEB_FORCE_LEGACY_STREAM;
 			const { spawnAgentSubscribeProcess } = await import("./agent-runner.js");
 
 			const first = spawnAgentSubscribeProcess("agent:main:web:sess-cache", 0);

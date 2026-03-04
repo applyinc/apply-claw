@@ -20,12 +20,13 @@ function getCheck(
 }
 
 function createTempStateDir(): string {
-  const dir = path.join(
+  const homeDir = path.join(
     tmpdir(),
-    `ironclaw-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    `denchclaw-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
-  mkdirSync(dir, { recursive: true });
-  return dir;
+  const stateDir = path.join(homeDir, ".openclaw-dench");
+  mkdirSync(stateDir, { recursive: true });
+  return stateDir;
 }
 
 function writeConfig(stateDir: string, config: Record<string, unknown>): void {
@@ -63,7 +64,7 @@ describe("bootstrap-external diagnostics", () => {
   });
 
   const baseParams = (dir: string) => ({
-    profile: "ironclaw",
+    profile: "dench",
     openClawCliAvailable: true,
     openClawVersion: "2026.3.1",
     gatewayPort: 18789,
@@ -74,7 +75,7 @@ describe("bootstrap-external diagnostics", () => {
     rolloutStage: "default" as const,
     legacyFallbackEnabled: false,
     stateDir: dir,
-    env: { HOME: "/home/testuser" },
+    env: { HOME: path.dirname(dir), OPENCLAW_HOME: path.dirname(dir) },
   });
 
   it("reports passing checks including agent-auth when config and keys exist", () => {
@@ -167,7 +168,7 @@ describe("bootstrap-external diagnostics", () => {
     expect(gateway.status).toBe("fail");
     expect(String(gateway.remediation)).toContain("dangerouslyDisableDeviceAuth true");
     expect(String(gateway.remediation)).toContain("dangerouslyDisableDeviceAuth false");
-    expect(String(gateway.remediation)).toContain("--profile ironclaw");
+    expect(String(gateway.remediation)).toContain("--profile dench");
   });
 
   it("marks rollout-stage as warning for beta and includes opt-in guidance", () => {
@@ -178,13 +179,17 @@ describe("bootstrap-external diagnostics", () => {
 
     const rollout = getCheck(diagnostics, "rollout-stage");
     expect(rollout.status).toBe("warn");
-    expect(String(rollout.remediation)).toContain("IRONCLAW_BOOTSTRAP_BETA_OPT_IN");
+    expect(String(rollout.remediation)).toContain("DENCHCLAW_BOOTSTRAP_BETA_OPT_IN");
   });
 
   it("fails cutover-gates when enforcement is enabled without gate envs", () => {
     const diagnostics = buildBootstrapDiagnostics({
       ...baseParams(stateDir),
-      env: { HOME: "/home/testuser", IRONCLAW_BOOTSTRAP_ENFORCE_SAFETY_GATES: "1" },
+      env: {
+        HOME: path.dirname(stateDir),
+        OPENCLAW_HOME: path.dirname(stateDir),
+        DENCHCLAW_BOOTSTRAP_ENFORCE_SAFETY_GATES: "1",
+      },
     });
 
     expect(getCheck(diagnostics, "cutover-gates").status).toBe("fail");
@@ -195,9 +200,10 @@ describe("bootstrap-external diagnostics", () => {
     const diagnostics = buildBootstrapDiagnostics({
       ...baseParams(stateDir),
       env: {
-        HOME: "/home/testuser",
-        IRONCLAW_BOOTSTRAP_MIGRATION_SUITE_OK: "1",
-        IRONCLAW_BOOTSTRAP_ONBOARDING_E2E_OK: "1",
+        HOME: path.dirname(stateDir),
+        OPENCLAW_HOME: path.dirname(stateDir),
+        DENCHCLAW_BOOTSTRAP_MIGRATION_SUITE_OK: "1",
+        DENCHCLAW_BOOTSTRAP_ONBOARDING_E2E_OK: "1",
       },
     });
 
@@ -271,16 +277,18 @@ describe("checkAgentAuth", () => {
 });
 
 describe("bootstrap-external rollout env helpers", () => {
-  it("resolves rollout stage from ironclaw/openclaw env vars", () => {
-    expect(resolveBootstrapRolloutStage({ IRONCLAW_BOOTSTRAP_ROLLOUT: "beta" })).toBe("beta");
+  it("resolves rollout stage from denchclaw/openclaw env vars", () => {
+    expect(resolveBootstrapRolloutStage({ DENCHCLAW_BOOTSTRAP_ROLLOUT: "beta" })).toBe("beta");
     expect(resolveBootstrapRolloutStage({ OPENCLAW_BOOTSTRAP_ROLLOUT: "internal" })).toBe(
       "internal",
     );
-    expect(resolveBootstrapRolloutStage({ IRONCLAW_BOOTSTRAP_ROLLOUT: "invalid" })).toBe("default");
+    expect(resolveBootstrapRolloutStage({ DENCHCLAW_BOOTSTRAP_ROLLOUT: "invalid" })).toBe(
+      "default",
+    );
   });
 
   it("detects legacy fallback via either env namespace", () => {
-    expect(isLegacyFallbackEnabled({ IRONCLAW_BOOTSTRAP_LEGACY_FALLBACK: "1" })).toBe(true);
+    expect(isLegacyFallbackEnabled({ DENCHCLAW_BOOTSTRAP_LEGACY_FALLBACK: "1" })).toBe(true);
     expect(isLegacyFallbackEnabled({ OPENCLAW_BOOTSTRAP_LEGACY_FALLBACK: "true" })).toBe(true);
     expect(isLegacyFallbackEnabled({})).toBe(false);
   });

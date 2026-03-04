@@ -703,27 +703,27 @@ describe("MonacoCodeEditor theme", () => {
 	it("uses light theme when html element does not have dark class", () => {
 		render(<MonacoCodeEditor content="hello" filename="app.ts" filePath="app.ts" />);
 		const editor = screen.getByTestId("monaco-editor");
-		expect(editor.dataset.theme).toBe("ironclaw-light");
+		expect(editor.dataset.theme).toBe("denchclaw-light");
 	});
 
 	it("uses dark theme when html element has dark class", () => {
 		document.documentElement.classList.add("dark");
 		render(<MonacoCodeEditor content="hello" filename="app.ts" filePath="app.ts" />);
 		const editor = screen.getByTestId("monaco-editor");
-		expect(editor.dataset.theme).toBe("ironclaw-dark");
+		expect(editor.dataset.theme).toBe("denchclaw-dark");
 	});
 
 	it("switches theme dynamically when html class changes (MutationObserver)", async () => {
 		render(<MonacoCodeEditor content="hello" filename="app.ts" filePath="app.ts" />);
 		const editor = screen.getByTestId("monaco-editor");
-		expect(editor.dataset.theme).toBe("ironclaw-light");
+		expect(editor.dataset.theme).toBe("denchclaw-light");
 
 		act(() => {
 			document.documentElement.classList.add("dark");
 		});
 
 		await waitFor(() => {
-			expect(editor.dataset.theme).toBe("ironclaw-dark");
+			expect(editor.dataset.theme).toBe("denchclaw-dark");
 		});
 	});
 
@@ -731,14 +731,14 @@ describe("MonacoCodeEditor theme", () => {
 		document.documentElement.classList.add("dark");
 		render(<MonacoCodeEditor content="hello" filename="app.ts" filePath="app.ts" />);
 		const editor = screen.getByTestId("monaco-editor");
-		expect(editor.dataset.theme).toBe("ironclaw-dark");
+		expect(editor.dataset.theme).toBe("denchclaw-dark");
 
 		act(() => {
 			document.documentElement.classList.remove("dark");
 		});
 
 		await waitFor(() => {
-			expect(editor.dataset.theme).toBe("ironclaw-light");
+			expect(editor.dataset.theme).toBe("denchclaw-light");
 		});
 	});
 });

@@ -8,7 +8,7 @@ import { safeResolvePath } from "@/lib/workspace";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const THUMB_DIR = join(tmpdir(), "ironclaw-thumbs");
+const THUMB_DIR = join(tmpdir(), "denchclaw-thumbs");
 mkdirSync(THUMB_DIR, { recursive: true });
 
 /**

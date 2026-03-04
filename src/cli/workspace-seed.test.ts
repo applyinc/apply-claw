@@ -7,7 +7,7 @@ import { seedWorkspaceFromAssets } from "./workspace-seed.js";
 function createTempDir(): string {
   const dir = path.join(
     os.tmpdir(),
-    `ironclaw-seed-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    `denchclaw-seed-test-${Date.now()}-${Math.random().toString(36).slice(2)}`,
   );
   mkdirSync(dir, { recursive: true });
   return dir;
@@ -63,19 +63,19 @@ describe("seedWorkspaceFromAssets", () => {
     expect(existsSync(identityPath)).toBe(true);
 
     const identityContent = readFileSync(identityPath, "utf-8");
-    expect(identityContent).toContain("Ironclaw");
+    expect(identityContent).toContain("DenchClaw");
     expect(identityContent).toContain(path.join(workspaceDir, "skills", "crm", "SKILL.md"));
     expect(identityContent).not.toContain("~skills/crm/SKILL.md");
   });
 
-  it("IDENTITY.md references Ironclaw system prompt contract", () => {
+  it("IDENTITY.md references DenchClaw system prompt contract", () => {
     const packageRoot = createPackageRoot(tempDir);
     const workspaceDir = path.join(tempDir, "workspace-contract");
 
     seedWorkspaceFromAssets({ workspaceDir, packageRoot });
 
     const identityContent = readFileSync(path.join(workspaceDir, "IDENTITY.md"), "utf-8");
-    expect(identityContent).toContain("Ironclaw system prompt contract");
+    expect(identityContent).toContain("DenchClaw system prompt contract");
   });
 
   it("creates CRM object projection files on first seed", () => {
@@ -115,7 +115,7 @@ describe("seedWorkspaceFromAssets", () => {
     seedWorkspaceFromAssets({ workspaceDir, packageRoot });
 
     const identityContent = readFileSync(path.join(workspaceDir, "IDENTITY.md"), "utf-8");
-    expect(identityContent).toContain("Ironclaw");
+    expect(identityContent).toContain("DenchClaw");
     expect(identityContent).not.toContain("# stale identity");
   });
 
