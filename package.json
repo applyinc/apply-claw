@@ -1,17 +1,17 @@
 {
   "name": "denchclaw",
   "version": "2.0.5",
-  "description": "AI-powered CRM platform with multi-channel agent gateway, DuckDB workspace, and knowledge management",
+  "description": "Fully Managed OpenClaw Framework for managing your CRM, Sales Automation and Outreach agents. The only local productivity tool you need.",
   "keywords": [],
-  "homepage": "https://github.com/openclaw/openclaw#readme",
+  "homepage": "https://github.com/DenchHQ/DenchClaw#readme",
   "bugs": {
-    "url": "https://github.com/openclaw/openclaw/issues"
+    "url": "https://github.com/DenchHQ/DenchClaw/issues"
   },
   "license": "MIT",
-  "author": "",
+  "author": "Kumar Abhirup <kumar@dench.com>, Dench.com <support@dench.com>",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/openclaw/openclaw.git"
+    "url": "git+https://github.com/DenchHQ/DenchClaw.git"
   },
   "bin": {
     "dench": "denchclaw.mjs",
