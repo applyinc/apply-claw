@@ -10,15 +10,11 @@ const POSTHOG_HOST = "https://us.i.posthog.com";
 
 let initialized = false;
 
-function initPostHog(anonymousId: string) {
+function initPostHog() {
   if (initialized || !POSTHOG_KEY || typeof window === "undefined") return;
 
   posthog.init(POSTHOG_KEY, {
     api_host: POSTHOG_HOST,
-    bootstrap: {
-      distinctID: anonymousId,
-      isIdentifiedID: false,
-    },
     capture_pageview: false,
     capture_pageleave: true,
     persistence: "memory",
@@ -43,15 +39,13 @@ function PageviewTracker() {
 }
 
 export function PostHogProvider({
-  anonymousId,
   children,
 }: {
-  anonymousId: string;
   children: React.ReactNode;
 }) {
   useEffect(() => {
-    initPostHog(anonymousId);
-  }, [anonymousId]);
+    initPostHog();
+  }, []);
 
   if (!POSTHOG_KEY) return <>{children}</>;
 

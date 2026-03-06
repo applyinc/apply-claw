@@ -1,20 +1,10 @@
-import { createHash } from "node:crypto";
-import os from "node:os";
+import { randomUUID } from "node:crypto";
 import { PostHog } from "posthog-node";
 
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY || "";
 const POSTHOG_HOST = "https://us.i.posthog.com";
 
 let client: PostHog | null = null;
-
-export function getAnonymousId(): string {
-  try {
-    const raw = `${os.hostname()}:${os.userInfo().username}`;
-    return createHash("sha256").update(raw).digest("hex").slice(0, 16);
-  } catch {
-    return "unknown";
-  }
-}
 
 function ensureClient(): PostHog | null {
   if (!POSTHOG_KEY) return null;
@@ -28,12 +18,16 @@ function ensureClient(): PostHog | null {
   return client;
 }
 
-export function trackServer(event: string, properties?: Record<string, unknown>): void {
+export function trackServer(
+  event: string,
+  properties?: Record<string, unknown>,
+  distinctId?: string,
+): void {
   const ph = ensureClient();
   if (!ph) return;
 
   ph.capture({
-    distinctId: getAnonymousId(),
+    distinctId: distinctId || randomUUID(),
     event,
     properties: {
       ...properties,
