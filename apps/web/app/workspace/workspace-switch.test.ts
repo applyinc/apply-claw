@@ -12,7 +12,7 @@ describe("resetWorkspaceStateOnSwitch", () => {
       setActiveSessionId: vi.fn(),
       setActiveSubagentKey: vi.fn(),
       resetMainChat: vi.fn(),
-      replaceUrlToWorkspace: vi.fn(),
+      replaceUrlToRoot: vi.fn(),
       reconnectWorkspaceWatcher: vi.fn(),
       refreshSessions: vi.fn(),
       refreshContext: vi.fn(),
@@ -28,7 +28,7 @@ describe("resetWorkspaceStateOnSwitch", () => {
     expect(deps.setActiveSessionId).toHaveBeenCalledWith(null);
     expect(deps.setActiveSubagentKey).toHaveBeenCalledWith(null);
     expect(deps.resetMainChat).toHaveBeenCalledTimes(1);
-    expect(deps.replaceUrlToWorkspace).toHaveBeenCalledTimes(1);
+    expect(deps.replaceUrlToRoot).toHaveBeenCalledTimes(1);
     expect(deps.reconnectWorkspaceWatcher).toHaveBeenCalledTimes(1);
     expect(deps.refreshSessions).toHaveBeenCalledTimes(1);
     expect(deps.refreshContext).toHaveBeenCalledTimes(1);

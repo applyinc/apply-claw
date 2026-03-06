@@ -9,7 +9,7 @@ type WorkspaceSwitchDeps = {
   setActiveSessionId: (sessionId: string | null) => void;
   setActiveSubagentKey: (sessionKey: string | null) => void;
   resetMainChat: () => void;
-  replaceUrlToWorkspace: () => void;
+  replaceUrlToRoot: () => void;
   reconnectWorkspaceWatcher: () => void;
   refreshSessions: () => void;
   refreshContext: () => void;
@@ -29,7 +29,7 @@ export function resetWorkspaceStateOnSwitch(deps: WorkspaceSwitchDeps): void {
   deps.setActiveSessionId(null);
   deps.setActiveSubagentKey(null);
   deps.resetMainChat();
-  deps.replaceUrlToWorkspace();
+  deps.replaceUrlToRoot();
   deps.reconnectWorkspaceWatcher();
   deps.refreshSessions();
   deps.refreshContext();
