@@ -122,8 +122,8 @@ export function normalizeOutputForPostHog(messages: unknown): unknown[] | undefi
 
 /**
  * Build full conversation state for the $ai_trace event.
- * Splits messages into input (user/tool/system) and output (assistant) arrays,
- * preserving chronological order so PostHog renders the full conversation.
+ * Preserves chronological message order (user → assistant → tool → assistant)
+ * so PostHog renders the conversation turn-by-turn with tool calls inline.
  */
 export function buildTraceState(
   messages: unknown,
@@ -131,8 +131,8 @@ export function buildTraceState(
 ): { inputState: unknown; outputState: unknown } {
   if (!Array.isArray(messages)) return { inputState: undefined, outputState: undefined };
 
-  const inputMessages: unknown[] = [];
-  const outputMessages: unknown[] = [];
+  const chronological: unknown[] = [];
+  let lastAssistantEntry: Record<string, unknown> | undefined;
 
   for (const msg of messages) {
     if (!msg || typeof msg !== "object") continue;
@@ -160,19 +160,20 @@ export function buildTraceState(
         }));
       }
 
-      outputMessages.push(entry);
+      chronological.push(entry);
+      lastAssistantEntry = entry;
     } else if (m.role === "user" || m.role === "tool" || m.role === "toolResult" || m.role === "system") {
       const content = privacyMode ? "[REDACTED]" : extractText();
       const entry: Record<string, unknown> = { role: m.role, content };
       if (m.name) entry.name = m.name;
       if (m.toolName) entry.toolName = m.toolName;
-      inputMessages.push(entry);
+      chronological.push(entry);
     }
   }
 
   return {
-    inputState: inputMessages.length > 0 ? inputMessages : undefined,
-    outputState: outputMessages.length > 0 ? outputMessages : undefined,
+    inputState: chronological.length > 0 ? chronological : undefined,
+    outputState: lastAssistantEntry ? [lastAssistantEntry] : undefined,
   };
 }
 
@@ -260,7 +261,7 @@ export function emitGeneration(
     }
 
     properties.$ai_input = sanitizeMessages(
-      extractInputMessages(event.messages) ?? trace.input,
+      event.messages ?? trace.input,
       privacyMode,
     );
 

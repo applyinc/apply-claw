@@ -313,7 +313,7 @@ describe("emitGeneration", () => {
     expect(ph.capture.mock.calls[0][0].properties.$ai_latency).toBe(5);
   });
 
-  it("includes user messages from event.messages in $ai_input even when trace.input is empty", () => {
+  it("includes full chronological conversation in $ai_input from event.messages", () => {
     traceCtx.startTrace("s", "r");
 
     const messages = [
@@ -323,7 +323,10 @@ describe("emitGeneration", () => {
     emitGeneration(ph, traceCtx, "s", { messages }, false);
 
     const input = ph.capture.mock.calls[0][0].properties.$ai_input;
-    expect(input).toEqual([{ role: "user", content: "what is this" }]);
+    expect(input).toEqual([
+      { role: "user", content: "what is this" },
+      { role: "assistant", content: "It's a config file." },
+    ]);
   });
 
   it("prefers event.messages over trace.input for $ai_input", () => {
@@ -337,10 +340,13 @@ describe("emitGeneration", () => {
     emitGeneration(ph, traceCtx, "s", { messages }, false);
 
     const input = ph.capture.mock.calls[0][0].properties.$ai_input;
-    expect(input).toEqual([{ role: "user", content: "hello" }]);
+    expect(input).toEqual([
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "hi" },
+    ]);
   });
 
-  it("falls back to trace.input when event.messages has no input messages", () => {
+  it("falls back to trace.input when event.messages is absent", () => {
     traceCtx.startTrace("s", "r");
     traceCtx.setInput("s", [{ role: "user", content: "from trace" }], false);
 
@@ -411,7 +417,7 @@ describe("emitToolSpan", () => {
 });
 
 describe("buildTraceState", () => {
-  it("includes all user messages in inputState and all assistant messages in outputState (full conversation)", () => {
+  it("preserves chronological order with all messages in inputState", () => {
     const messages = [
       { role: "user", content: "Question 1" },
       { role: "assistant", content: "Answer 1" },
@@ -421,15 +427,16 @@ describe("buildTraceState", () => {
     const { inputState, outputState } = buildTraceState(messages, false);
     expect(inputState).toEqual([
       { role: "user", content: "Question 1" },
+      { role: "assistant", content: "Answer 1" },
       { role: "user", content: "Question 2" },
+      { role: "assistant", content: "Answer 2" },
     ]);
     expect(outputState).toEqual([
-      { role: "assistant", content: "Answer 1" },
       { role: "assistant", content: "Answer 2" },
     ]);
   });
 
-  it("includes tool result messages in inputState (user sees tool activity)", () => {
+  it("interleaves tool calls and results chronologically", () => {
     const messages = [
       { role: "user", content: "run ls" },
       { role: "assistant", content: "Running..." },
@@ -437,10 +444,13 @@ describe("buildTraceState", () => {
       { role: "assistant", content: "Done!" },
     ];
     const { inputState, outputState } = buildTraceState(messages, false);
-    expect(inputState).toHaveLength(2);
-    expect((inputState as any[])[1].role).toBe("tool");
-    expect((inputState as any[])[1].name).toBe("exec");
-    expect(outputState).toHaveLength(2);
+    expect(inputState).toHaveLength(4);
+    expect((inputState as any[])[0].role).toBe("user");
+    expect((inputState as any[])[1].role).toBe("assistant");
+    expect((inputState as any[])[2].role).toBe("tool");
+    expect((inputState as any[])[2].name).toBe("exec");
+    expect((inputState as any[])[3].role).toBe("assistant");
+    expect(outputState).toEqual([{ role: "assistant", content: "Done!" }]);
   });
 
   it("redacts content in privacy mode but keeps role and tool metadata", () => {
@@ -450,7 +460,9 @@ describe("buildTraceState", () => {
     ];
     const { inputState, outputState } = buildTraceState(messages, true);
     expect((inputState as any[])[0]).toEqual({ role: "user", content: "[REDACTED]" });
-    expect((outputState as any[])[0].content).toBe("[REDACTED]");
+    expect((inputState as any[])[1].content).toBe("[REDACTED]");
+    expect((inputState as any[])[1].tool_calls).toEqual([{ type: "function", function: { name: "exec" } }]);
+    expect(outputState).toHaveLength(1);
     expect((outputState as any[])[0].tool_calls).toEqual([{ type: "function", function: { name: "exec" } }]);
   });
 
@@ -462,7 +474,8 @@ describe("buildTraceState", () => {
         tool_calls: [{ function: { name: "web_search" } }],
       },
     ];
-    const { outputState } = buildTraceState(messages, true);
+    const { inputState, outputState } = buildTraceState(messages, true);
+    expect((inputState as any[])[0].tool_calls).toEqual([{ type: "function", function: { name: "web_search" } }]);
     expect((outputState as any[])[0].tool_calls).toEqual([{ type: "function", function: { name: "web_search" } }]);
   });
 
@@ -473,7 +486,7 @@ describe("buildTraceState", () => {
 });
 
 describe("emitTrace", () => {
-  it("emits $ai_trace with full conversation state from buildTraceState", () => {
+  it("emits $ai_trace with chronological conversation in inputState", () => {
     const ph = createMockPostHog();
     const traceCtx = new TraceContextManager();
     traceCtx.startTrace("sess-1", "r");
@@ -487,7 +500,10 @@ describe("emitTrace", () => {
 
     const props = ph.capture.mock.calls[0][0].properties;
     expect(props.$ai_trace_id).toBe(traceCtx.getTrace("sess-1")!.traceId);
-    expect(props.$ai_input_state).toEqual([{ role: "user", content: "Hello" }]);
+    expect(props.$ai_input_state).toEqual([
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi there!" },
+    ]);
     expect(props.$ai_output_state).toEqual([{ role: "assistant", content: "Hi there!" }]);
   });
 
