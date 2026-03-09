@@ -14,6 +14,7 @@ import {
   isValidWorkspaceName,
   resolveWorkspaceRoot,
   ensureAgentInConfig,
+  ensureChatAgentPool,
 } from "@/lib/workspace";
 import {
   BOOTSTRAP_TEMPLATE_CONTENT,
@@ -203,6 +204,9 @@ export async function POST(req: Request) {
 
   // Register a per-workspace agent in openclaw.json and make it the default.
   ensureAgentInConfig(workspaceName, workspaceDir);
+
+  // Pre-create a pool of chat agent slots for concurrent web chat sessions.
+  ensureChatAgentPool(workspaceName, workspaceDir);
 
   // Switch the UI to the new workspace.
   setUIActiveWorkspace(workspaceName);

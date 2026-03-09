@@ -15,6 +15,7 @@ import { trackServer } from "@/lib/telemetry";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { resolveOpenClawStateDir } from "@/lib/workspace";
+import { getSessionMeta } from "@/app/api/web-sessions/shared";
 
 export const runtime = "nodejs";
 
@@ -119,11 +120,16 @@ export async function POST(req: Request) {
 			parts: lastUserMessage.parts as unknown[],
 			html: userHtml,
 		});
+
+		const sessionMeta = getSessionMeta(sessionId);
+		const effectiveAgentId = sessionMeta?.chatAgentId ?? sessionMeta?.workspaceAgentId;
+
 		try {
 			startRun({
 				sessionId,
 				message: agentMessage,
 				agentSessionId: sessionId,
+				overrideAgentId: effectiveAgentId,
 			});
 		} catch (err) {
 			return new Response(

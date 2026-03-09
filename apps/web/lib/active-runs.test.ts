@@ -2,6 +2,17 @@ import { type ChildProcess } from "node:child_process";
 import { PassThrough } from "node:stream";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// Mock workspace to prevent disk I/O and provide stable agent IDs
+vi.mock("./workspace", () => ({
+	resolveWebChatDir: vi.fn(() => "/tmp/mock-web-chat"),
+	resolveOpenClawStateDir: vi.fn(() => "/tmp/mock-state"),
+	resolveActiveAgentId: vi.fn(() => "main"),
+}));
+
+vi.mock("./chat-agent-registry", () => ({
+	markChatAgentIdle: vi.fn(),
+}));
+
 // Mock agent-runner to control spawnAgentProcess
 vi.mock("./agent-runner", () => ({
 	spawnAgentProcess: vi.fn(),
@@ -103,6 +114,16 @@ function createMockChild() {
 describe("active-runs", () => {
 	beforeEach(() => {
 		vi.resetModules();
+
+		vi.mock("./workspace", () => ({
+			resolveWebChatDir: vi.fn(() => "/tmp/mock-web-chat"),
+			resolveOpenClawStateDir: vi.fn(() => "/tmp/mock-state"),
+			resolveActiveAgentId: vi.fn(() => "main"),
+		}));
+
+		vi.mock("./chat-agent-registry", () => ({
+			markChatAgentIdle: vi.fn(),
+		}));
 
 		// Re-wire mocks after resetModules
 		vi.mock("./agent-runner", () => ({
@@ -1462,6 +1483,90 @@ describe("active-runs", () => {
 					(e) =>
 						e.type === "reasoning-delta" &&
 						e.delta === "Preparing response...",
+				),
+			).toBe(true);
+
+			child.stdout.end();
+			await new Promise((r) => setTimeout(r, 50));
+			child._emit("close", 0);
+		});
+	});
+
+	// ── Pinned agent ID ────────────────────────────────────────────────
+
+	describe("pinned agent identity", () => {
+		it("captures pinnedAgentId and pinnedSessionKey at run creation", async () => {
+			const { startRun, getActiveRun } = await setup();
+
+			startRun({
+				sessionId: "s-pin",
+				message: "hello",
+				agentSessionId: "s-pin",
+			});
+
+			const run = getActiveRun("s-pin");
+			expect(run).toBeDefined();
+			expect(run?.pinnedAgentId).toBe("main");
+			expect(run?.pinnedSessionKey).toBe("agent:main:web:s-pin");
+		});
+
+		it("uses overrideAgentId when provided", async () => {
+			const { startRun, getActiveRun } = await setup();
+
+			startRun({
+				sessionId: "s-override",
+				message: "hello",
+				agentSessionId: "s-override",
+				overrideAgentId: "chat-abc123",
+			});
+
+			const run = getActiveRun("s-override");
+			expect(run?.pinnedAgentId).toBe("chat-abc123");
+			expect(run?.pinnedSessionKey).toBe("agent:chat-abc123:web:s-override");
+		});
+	});
+
+	// ── Chat frame forwarding ─────────────────────────────────────────
+
+	describe("chat frame handling", () => {
+		it("processes chat final events with assistant text", async () => {
+			const { child, startRun, subscribeToRun } = await setup();
+
+			const events: SseEvent[] = [];
+
+			startRun({
+				sessionId: "s-chat-frame",
+				message: "run",
+				agentSessionId: "s-chat-frame",
+			});
+
+			subscribeToRun(
+				"s-chat-frame",
+				(event) => {
+					if (event) {events.push(event);}
+				},
+				{ replay: false },
+			);
+
+			child._writeLine({
+				event: "chat",
+				data: {
+					state: "final",
+					message: {
+						role: "assistant",
+						content: [{ type: "text", text: "Chat final text." }],
+					},
+				},
+			});
+
+			await new Promise((r) => setTimeout(r, 50));
+
+			expect(
+				events.some(
+					(e) =>
+						e.type === "text-delta" &&
+						typeof e.delta === "string" &&
+						e.delta.includes("Chat final text."),
 				),
 			).toBe(true);
 

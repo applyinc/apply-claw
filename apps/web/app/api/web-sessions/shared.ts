@@ -10,6 +10,20 @@ export type WebSessionMeta = {
   messageCount: number;
   /** When set, this session is scoped to a specific workspace file. */
   filePath?: string;
+  /** Workspace name at session creation time (pinned). */
+  workspaceName?: string;
+  /** Workspace root directory at session creation time. */
+  workspaceRoot?: string;
+  /** The workspace's durable agent ID (e.g. "main"). */
+  workspaceAgentId?: string;
+  /** Ephemeral chat-specific agent ID, if one was allocated. */
+  chatAgentId?: string;
+  /** The full gateway session key used for this chat. */
+  gatewaySessionKey?: string;
+  /** Which agent model is in use: "workspace" (shared) or "ephemeral" (per-chat). */
+  agentMode?: "workspace" | "ephemeral";
+  /** Last time the session had active traffic. */
+  lastActiveAt?: number;
 };
 
 export function ensureDir() {
@@ -85,4 +99,23 @@ export function readIndex(): WebSessionMeta[] {
 export function writeIndex(sessions: WebSessionMeta[]) {
   const dir = ensureDir();
   writeFileSync(join(dir, "index.json"), JSON.stringify(sessions, null, 2));
+}
+
+/** Look up a session's pinned metadata by ID. Returns undefined for unknown sessions. */
+export function getSessionMeta(sessionId: string): WebSessionMeta | undefined {
+  return readIndex().find((s) => s.id === sessionId);
+}
+
+/** Resolve the effective agent ID for a session.
+ *  Uses pinned metadata when available, falls back to workspace-global resolution. */
+export function resolveSessionAgentId(sessionId: string, fallbackAgentId: string): string {
+  const meta = getSessionMeta(sessionId);
+  return meta?.chatAgentId ?? meta?.workspaceAgentId ?? fallbackAgentId;
+}
+
+/** Resolve the gateway session key for a session.
+ *  Uses pinned metadata when available, constructs from the given agent ID otherwise. */
+export function resolveSessionKey(sessionId: string, fallbackAgentId: string): string {
+  const meta = getSessionMeta(sessionId);
+  return meta?.gatewaySessionKey ?? `agent:${fallbackAgentId}:web:${sessionId}`;
 }

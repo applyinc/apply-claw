@@ -24,6 +24,7 @@ vi.mock("@/lib/workspace", () => ({
   isValidWorkspaceName: vi.fn(() => true),
   resolveWorkspaceRoot: vi.fn(() => null),
   ensureAgentInConfig: vi.fn(),
+  ensureChatAgentPool: vi.fn(),
 }));
 
 describe("POST /api/workspace/init", () => {

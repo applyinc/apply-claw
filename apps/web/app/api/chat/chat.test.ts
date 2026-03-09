@@ -16,6 +16,18 @@ vi.mock("@/lib/workspace", () => ({
   resolveAgentWorkspacePrefix: vi.fn(() => null),
 }));
 
+// Mock web-sessions shared module
+vi.mock("@/app/api/web-sessions/shared", () => ({
+  getSessionMeta: vi.fn(() => undefined),
+  resolveSessionKey: vi.fn(
+    (sessionId: string, fallbackAgentId: string) =>
+      `agent:${fallbackAgentId}:web:${sessionId}`,
+  ),
+  resolveSessionAgentId: vi.fn(
+    (_sessionId: string, fallbackAgentId: string) => fallbackAgentId,
+  ),
+}));
+
 describe("Chat API routes", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -31,6 +43,16 @@ describe("Chat API routes", () => {
     }));
     vi.mock("@/lib/workspace", () => ({
       resolveAgentWorkspacePrefix: vi.fn(() => null),
+    }));
+    vi.mock("@/app/api/web-sessions/shared", () => ({
+      getSessionMeta: vi.fn(() => undefined),
+      resolveSessionKey: vi.fn(
+        (sessionId: string, fallbackAgentId: string) =>
+          `agent:${fallbackAgentId}:web:${sessionId}`,
+      ),
+      resolveSessionAgentId: vi.fn(
+        (_sessionId: string, fallbackAgentId: string) => fallbackAgentId,
+      ),
     }));
   });
 

@@ -362,6 +362,54 @@ export function ensureAgentInConfig(workspaceName: string, workspaceDir: string)
   writeOpenClawConfig(config);
 }
 
+const CHAT_SLOT_PREFIX = "chat-slot-";
+const DEFAULT_CHAT_POOL_SIZE = 5;
+
+/**
+ * Pre-create a pool of chat agent slots in `agents.list[]` so the gateway
+ * knows about them at startup. Each slot shares the workspace directory
+ * of the parent workspace agent, enabling concurrent chat sessions.
+ */
+export function ensureChatAgentPool(workspaceName: string, workspaceDir: string, poolSize = DEFAULT_CHAT_POOL_SIZE): void {
+  const config = readOpenClawConfig();
+  if (!config.agents) { config.agents = {}; }
+  if (!Array.isArray(config.agents.list)) { config.agents.list = []; }
+
+  const baseId = workspaceNameToAgentId(workspaceName);
+  let changed = false;
+
+  for (let i = 1; i <= poolSize; i++) {
+    const slotId = `${CHAT_SLOT_PREFIX}${baseId}-${i}`;
+    const existing = config.agents.list.find((a) => a.id === slotId);
+    if (!existing) {
+      config.agents.list.push({ id: slotId, workspace: workspaceDir });
+      changed = true;
+    } else if (existing.workspace !== workspaceDir) {
+      existing.workspace = workspaceDir;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    writeOpenClawConfig(config);
+  }
+}
+
+/**
+ * Return the list of chat slot agent IDs for a workspace.
+ */
+export function getChatSlotAgentIds(workspaceName?: string): string[] {
+  const config = readOpenClawConfig();
+  const list = config.agents?.list;
+  if (!Array.isArray(list)) { return []; }
+
+  const baseId = workspaceNameToAgentId(workspaceName ?? getActiveWorkspaceName() ?? DEFAULT_WORKSPACE_NAME);
+  const prefix = `${CHAT_SLOT_PREFIX}${baseId}-`;
+  return list.filter((a) => a.id.startsWith(prefix)).map((a) => a.id);
+}
+
+export { CHAT_SLOT_PREFIX, DEFAULT_CHAT_POOL_SIZE };
+
 /**
  * Flip `default: true` to the target agent in `agents.list[]`.
  * No-op if the list doesn't exist or the agent isn't found.

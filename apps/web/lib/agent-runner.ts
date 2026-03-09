@@ -603,7 +603,6 @@ class GatewayProcessHandle
 					...(sessionKey ? { sessionKey } : {}),
 					deliver: false,
 					channel: "webchat",
-					thinking: "xhigh",
 					lane: this.params.lane ?? "web",
 					timeout: 0,
 				});
@@ -662,21 +661,33 @@ class GatewayProcessHandle
 		if (!this.client || !sessionKey.trim()) {
 			return;
 		}
+
+		const patchParams: Record<string, string> = {
+			key: sessionKey,
+			thinkingLevel: "xhigh",
+			verboseLevel: "full",
+			reasoningLevel: "on",
+		};
+
 		let attempt = 0;
 		let lastMessage = "";
 		while (attempt < SESSIONS_PATCH_MAX_ATTEMPTS) {
 			attempt += 1;
 			try {
-				const patch = await this.client.request("sessions.patch", {
-					key: sessionKey,
-					thinkingLevel: "xhigh",
-					verboseLevel: "full",
-					reasoningLevel: "on",
-				});
+				const patch = await this.client.request("sessions.patch", patchParams);
 				if (patch.ok) {
 					return;
 				}
 				lastMessage = frameErrorMessage(patch);
+
+				// If the error indicates thinkingLevel is unsupported for the
+				// current model, retry without it rather than failing entirely.
+				if (lastMessage.includes("thinkingLevel") && patchParams.thinkingLevel) {
+					delete patchParams.thinkingLevel;
+					attempt = 0;
+					continue;
+				}
+
 				if (
 					attempt >= SESSIONS_PATCH_MAX_ATTEMPTS ||
 					!isRetryableGatewayMessage(lastMessage)
@@ -686,6 +697,13 @@ class GatewayProcessHandle
 			} catch (error) {
 				lastMessage =
 					error instanceof Error ? error.message : String(error);
+
+				if (lastMessage.includes("thinkingLevel") && patchParams.thinkingLevel) {
+					delete patchParams.thinkingLevel;
+					attempt = 0;
+					continue;
+				}
+
 				if (
 					attempt >= SESSIONS_PATCH_MAX_ATTEMPTS ||
 					!isRetryableGatewayMessage(lastMessage)
@@ -778,6 +796,36 @@ class GatewayProcessHandle
 			) {
 				this.scheduleClose();
 			}
+			return;
+		}
+
+		if (frame.event === "chat") {
+			// Only forward chat frames in subscribe mode. In start mode
+			// the agent stream already delivers the full assistant text;
+			// forwarding chat finals would duplicate the output.
+			if (this.params.mode !== "subscribe") {
+				return;
+			}
+			const payload = asRecord(frame.payload) ?? {};
+			const sessionKey =
+				typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
+			if (!this.shouldAcceptSessionEvent(sessionKey)) {
+				return;
+			}
+			const payloadGlobalSeq =
+				typeof payload.globalSeq === "number" ? payload.globalSeq : undefined;
+			const eventGlobalSeq =
+				payloadGlobalSeq ??
+				(typeof frame.seq === "number" ? frame.seq : undefined);
+			const event: AgentEvent = {
+				event: "chat",
+				data: payload,
+				...(typeof eventGlobalSeq === "number"
+					? { globalSeq: eventGlobalSeq }
+					: {}),
+				...(sessionKey ? { sessionKey } : {}),
+			};
+			(this.stdout as PassThrough).write(`${JSON.stringify(event)}\n`);
 			return;
 		}
 
@@ -886,12 +934,14 @@ export async function callGatewayRpc(
 
 /**
  * Start an agent run via the Gateway WebSocket and return a process handle.
+ * @param overrideAgentId - Use a specific agent ID instead of the workspace default.
  */
 export function spawnAgentProcess(
 	message: string,
 	agentSessionId?: string,
+	overrideAgentId?: string,
 ): AgentProcessHandle {
-	const agentId = resolveActiveAgentId();
+	const agentId = overrideAgentId ?? resolveActiveAgentId();
 	const sessionKey = agentSessionId
 		? `agent:${agentId}:web:${agentSessionId}`
 		: undefined;

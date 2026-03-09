@@ -23,6 +23,7 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { resolveWebChatDir, resolveOpenClawStateDir, resolveActiveAgentId } from "./workspace";
+import { markChatAgentIdle } from "./chat-agent-registry";
 import {
 	type AgentProcessHandle,
 	type AgentEvent,
@@ -102,6 +103,10 @@ export type ActiveRun = {
 	_finalizeTimer?: ReturnType<typeof setTimeout> | null;
 	/** @internal short reconciliation window before waiting-run completion */
 	_waitingFinalizeTimer?: ReturnType<typeof setTimeout> | null;
+	/** Agent ID captured at run creation time. Used for abort, transcript enrichment. */
+	pinnedAgentId?: string;
+	/** Full gateway session key captured at run creation time. */
+	pinnedSessionKey?: string;
 };
 
 // ── Constants ──
@@ -113,6 +118,8 @@ const SUBSCRIBE_RETRY_BASE_MS = 300;
 const SUBSCRIBE_RETRY_MAX_MS = 5_000;
 const SUBSCRIBE_LIFECYCLE_END_GRACE_MS = 750;
 const WAITING_FINALIZE_RECONCILE_MS = 5_000;
+const MAX_WAITING_DURATION_MS = 10 * 60_000;
+const SUBAGENT_REGISTRY_STALENESS_MS = 15 * 60_000;
 
 const SILENT_REPLY_TOKEN = "NO_REPLY";
 
@@ -275,10 +282,13 @@ export async function hasRunningSubagentsForParent(parentWebSessionId: string): 
 		const runs = raw?.runs;
 		if (!runs) {return false;}
 		const parentKeyPattern = `:web:${parentWebSessionId}`;
+		const now = Date.now();
 		for (const entry of Object.values(runs)) {
 			const requester = typeof entry.requesterSessionKey === "string" ? entry.requesterSessionKey : "";
 			if (!requester.endsWith(parentKeyPattern)) {continue;}
 			if (typeof entry.endedAt === "number") {continue;}
+			const createdAt = typeof entry.createdAt === "number" ? entry.createdAt : 0;
+			if (createdAt > 0 && now - createdAt > SUBAGENT_REGISTRY_STALENESS_MS) {continue;}
 			return true;
 		}
 	} catch { /* ignore */ }
@@ -505,7 +515,9 @@ export function abortRun(sessionId: string): boolean {
  */
 function sendGatewayAbort(sessionId: string): void {
 	try {
-		const sessionKey = `agent:${resolveActiveAgentId()}:web:${sessionId}`;
+		const run = activeRuns.get(sessionId);
+		const agentId = run?.pinnedAgentId ?? resolveActiveAgentId();
+		const sessionKey = run?.pinnedSessionKey ?? `agent:${agentId}:web:${sessionId}`;
 		void callGatewayRpc("chat.abort", { sessionKey }, { timeoutMs: 4_000 }).catch(
 			() => {
 				// Best effort; don't let abort failures break the stop flow.
@@ -524,8 +536,10 @@ export function startRun(params: {
 	sessionId: string;
 	message: string;
 	agentSessionId?: string;
+	/** Use a specific agent ID instead of the workspace default. */
+	overrideAgentId?: string;
 }): ActiveRun {
-	const { sessionId, message, agentSessionId } = params;
+	const { sessionId, message, agentSessionId, overrideAgentId } = params;
 
 	const existing = activeRuns.get(sessionId);
 	if (existing?.status === "running") {
@@ -534,8 +548,12 @@ export function startRun(params: {
 	// Clean up a finished run that's still in the grace period.
 	if (existing) {cleanupRun(sessionId);}
 
+	const agentId = overrideAgentId ?? resolveActiveAgentId();
+	const sessionKey = agentSessionId
+		? `agent:${agentId}:web:${agentSessionId}`
+		: undefined;
 	const abortController = new AbortController();
-	const child = spawnAgentProcess(message, agentSessionId);
+	const child = spawnAgentProcess(message, agentSessionId, overrideAgentId);
 
 	const run: ActiveRun = {
 		sessionId,
@@ -557,6 +575,8 @@ export function startRun(params: {
 		_subscribeRetryTimer: null,
 		_subscribeRetryAttempt: 0,
 		_waitingFinalizeTimer: null,
+		pinnedAgentId: agentId,
+		pinnedSessionKey: sessionKey,
 	};
 
 	activeRuns.set(sessionId, run);
@@ -657,9 +677,10 @@ type TranscriptToolPart = {
 
 function readLatestTranscriptToolParts(
 	sessionKey: string,
+	pinnedAgentId?: string,
 ): { sessionId: string; tools: TranscriptToolPart[] } | null {
 	const stateDir = resolveOpenClawStateDir();
-	const agentId = resolveActiveAgentId();
+	const agentId = pinnedAgentId ?? resolveActiveAgentId();
 	const sessionsJsonPath = join(stateDir, "agents", agentId, "sessions", "sessions.json");
 	if (!existsSync(sessionsJsonPath)) { return null; }
 	const sessions = JSON.parse(readFileSync(sessionsJsonPath, "utf-8")) as Record<string, Record<string, unknown>>;
@@ -829,7 +850,7 @@ function wireSubscribeOnlyProcess(
 		if (liveStats.toolStartCount > 0) {
 			return;
 		}
-		const bundle = readLatestTranscriptToolParts(sessionKey);
+		const bundle = readLatestTranscriptToolParts(sessionKey, run.pinnedAgentId);
 		if (!bundle) {
 			return;
 		}
@@ -1145,7 +1166,8 @@ function finalizeSubscribeRun(run: ActiveRun, status: "completed" | "error" = "c
 	// backfill tool-invocation parts from the transcript into the web-chat JSONL.
 	if (run.isSubscribeOnly && run.sessionKey && !hasToolParts) {
 		const sessionKey = run.sessionKey;
-		setTimeout(() => { deferredTranscriptEnrich(sessionKey); }, 2_000);
+		const agentId = run.pinnedAgentId;
+		setTimeout(() => { deferredTranscriptEnrich(sessionKey, agentId); }, 2_000);
 	}
 
 	const grace = run.isSubscribeOnly ? SUBSCRIBE_CLEANUP_GRACE_MS : CLEANUP_GRACE_MS;
@@ -1159,10 +1181,10 @@ function finalizeSubscribeRun(run: ActiveRun, status: "completed" | "error" = "c
  * tool-invocation parts into the web-chat JSONL for a subagent session.
  * Matches tools to assistant messages by text content to avoid index-mapping issues.
  */
-function deferredTranscriptEnrich(sessionKey: string): void {
+function deferredTranscriptEnrich(sessionKey: string, pinnedAgentId?: string): void {
 	try {
 		const stateDir = resolveOpenClawStateDir();
-		const agentId = resolveActiveAgentId();
+		const agentId = pinnedAgentId ?? resolveActiveAgentId();
 		const sessionsJsonPath = join(stateDir, "agents", agentId, "sessions", "sessions.json");
 		if (!existsSync(sessionsJsonPath)) {return;}
 
@@ -1499,7 +1521,8 @@ function wireChildProcess(run: ActiveRun): void {
 	// ── Parse stdout JSON lines ──
 
 	const rl = createInterface({ input: child.stdout! });
-	const parentSessionKey = `agent:${resolveActiveAgentId()}:web:${run.sessionId}`;
+	const pinnedAgent = run.pinnedAgentId ?? resolveActiveAgentId();
+	const parentSessionKey = run.pinnedSessionKey ?? `agent:${pinnedAgent}:web:${run.sessionId}`;
 	// Prevent unhandled 'error' events on the readline interface.
 	// When the child process fails to start (e.g. ENOENT — missing script)
 	// the stdout pipe is destroyed and readline re-emits the error.  Without
@@ -1935,11 +1958,21 @@ function wireChildProcess(run: ActiveRun): void {
 			}
 			flushPersistence(run).catch(() => {});
 			startParentSubscribeStream(run, parentSessionKey, processParentSubscribeEvent);
+
+			// Safety: force-finalize if waiting exceeds the maximum duration
+			setTimeout(() => {
+				if (run.status === "waiting-for-subagents") {
+					finalizeWaitingRun(run);
+				}
+			}, MAX_WAITING_DURATION_MS);
 			return;
 		}
 
 		// Normal completion path.
 		run.status = exitedClean ? "completed" : "error";
+
+		// Release the chat agent pool slot so it can be reused.
+		try { markChatAgentIdle(run.sessionId); } catch { /* best-effort */ }
 
 		// Final persistence flush (removes _streaming flag).
 		flushPersistence(run).catch(() => {});
@@ -2072,6 +2105,8 @@ function finalizeWaitingRun(run: ActiveRun): void {
 	resetSubscribeRetryState(run);
 
 	stopSubscribeProcess(run);
+
+	try { markChatAgentIdle(run.sessionId); } catch { /* best-effort */ }
 
 	flushPersistence(run).catch(() => {});
 

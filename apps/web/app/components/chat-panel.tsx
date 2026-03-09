@@ -957,6 +957,31 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 			status === "submitted" ||
 			isReconnecting;
 
+		// Stream stall detection: if we stay in "submitted" (no first
+		// token received) for too long, surface an error and reset.
+		const stallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+		useEffect(() => {
+			if (stallTimerRef.current) {
+				clearTimeout(stallTimerRef.current);
+				stallTimerRef.current = null;
+			}
+			if (status === "submitted") {
+				stallTimerRef.current = setTimeout(() => {
+					stallTimerRef.current = null;
+					if (status === "submitted") {
+						setStreamError("Request timed out — no response from agent. Try again or check the gateway.");
+						void stop();
+					}
+				}, 90_000);
+			}
+			return () => {
+				if (stallTimerRef.current) {
+					clearTimeout(stallTimerRef.current);
+					stallTimerRef.current = null;
+				}
+			};
+		}, [status, stop]);
+
 		// Auto-scroll to bottom on new messages, but only when the user
 		// is already near the bottom.  If the user scrolls up during
 		// streaming, we stop auto-scrolling until they return to the
@@ -1042,8 +1067,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 					}
 
 					// If the run already completed (still in the grace
-					// period), skip the expensive SSE replay -- the
-					// persisted messages we already loaded are final.
+					// period), skip the SSE replay -- the persisted
+					// messages we already loaded are final.
 					if (res.headers.get("X-Run-Active") === "false") {
 						void res.body.cancel();
 						return false;
@@ -1265,19 +1290,21 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 			// eslint-disable-next-line react-hooks/exhaustive-deps -- stable setters
 		}, [filePath, attemptReconnect]);
 
-		// ── Non-file panel: auto-restore session on mount ──
-		// When the main ChatPanel remounts after navigation (e.g. user viewed
-		// a file then returned to chat), re-load the previously active session
-		// and reconnect to any active stream.
+		// ── Non-file panel: auto-restore session on mount or URL change ──
 		const initialSessionHandled = useRef(false);
+		const lastInitialSessionRef = useRef<string | null>(null);
 		useEffect(() => {
-			if (filePath || isSubagentMode || !initialSessionId || initialSessionHandled.current) {
+			if (filePath || isSubagentMode || !initialSessionId) {
+				return;
+			}
+			if (initialSessionHandled.current && initialSessionId === lastInitialSessionRef.current) {
 				return;
 			}
 			initialSessionHandled.current = true;
+			lastInitialSessionRef.current = initialSessionId;
 			void handleSessionSelect(initialSessionId);
-			// eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
-		}, []);
+			// eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally re-run when initialSessionId changes
+		}, [initialSessionId]);
 
 		// ── Subagent mode: load persisted messages + reconnect to active stream ──
 		useEffect(() => {
