@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 import { FormattedFieldValue } from "./formatted-field-value";
+import { formatWorkspaceFieldValue } from "@/lib/workspace-cell-format";
+import { parseTagsValue } from "@/lib/parse-tags";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -125,6 +127,7 @@ function GalleryCard({
 				{displayFields.map((field) => {
 					const val = entry[field.name];
 					if (val == null || safeString(val) === "") {return null;}
+					const tags = field.type === "tags" ? parseTagsValue(val) : [];
 					return (
 						<div key={field.id} className="flex items-baseline gap-2">
 							<span
@@ -133,8 +136,23 @@ function GalleryCard({
 							>
 								{field.name}
 							</span>
-							<div className="text-[12px] truncate" style={{ color: "var(--color-text)" }}>
-								<FormattedFieldValue value={val} fieldType={field.type} mode="table" />
+							<div className="text-[12px] whitespace-pre-line line-clamp-2" style={{ color: "var(--color-text)" }}>
+								{field.type === "tags" ? (
+									<span className="flex items-center gap-0.5 flex-wrap">
+										{tags.slice(0, 3).map((tag) => {
+											const fmt = formatWorkspaceFieldValue(tag);
+											const isLink = fmt.kind === "link" && fmt.href;
+											return isLink ? (
+												<a key={tag} href={fmt.href!} target={fmt.linkType === "url" || fmt.linkType === "file" ? "_blank" : undefined} rel={fmt.linkType === "url" || fmt.linkType === "file" ? "noopener noreferrer" : undefined} onClick={(e) => e.stopPropagation()} className="inline-flex items-center px-1.5 py-0 rounded text-[11px] font-medium hover:underline underline-offset-2" style={{ background: "rgba(148, 163, 184, 0.12)", color: "var(--color-accent)" }}>{fmt.text}</a>
+											) : (
+												<span key={tag} className="inline-flex items-center px-1.5 py-0 rounded text-[11px] font-medium" style={{ background: "rgba(148, 163, 184, 0.12)", color: "var(--color-text-muted)" }}>{tag}</span>
+											);
+										})}
+										{tags.length > 3 && <span className="text-[10px]" style={{ color: "var(--color-text-muted)" }}>+{tags.length - 3}</span>}
+									</span>
+								) : (
+									<FormattedFieldValue value={val} fieldType={field.type} mode="table" />
+								)}
 							</div>
 						</div>
 					);

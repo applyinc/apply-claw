@@ -215,6 +215,48 @@ body {
   font-family: "Bookerly", Georgia, "Times New Roman", serif;
 }
 
+.chat-user-html-content p {
+  margin: 0;
+}
+.chat-user-html-content p + p {
+  margin-top: 0.35em;
+}
+.chat-user-html-content p:empty {
+  min-height: 1em;
+}
+.chat-user-html-content strong {
+  font-weight: 700;
+}
+.chat-user-html-content em {
+  font-style: italic;
+}
+.chat-user-html-content code {
+  font-family: "SF Mono", "Fira Code", "JetBrains Mono", monospace;
+  font-size: 0.85em;
+  background: rgba(255,255,255,0.15);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+}
+.chat-user-html-content span[data-chat-file-mention] {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px 1px 6px;
+  margin: 0 1px;
+  border-radius: 6px;
+  background: var(--mention-bg, rgba(255, 255, 255, 0.18));
+  color: inherit;
+  font-size: 0.85em;
+  font-weight: 500;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.chat-user-html-content span[data-chat-file-mention]::before {
+  content: "@";
+  opacity: 0.5;
+  font-size: 0.9em;
+}
+
 /* Smooth theme transitions */
 *,
 *::before,

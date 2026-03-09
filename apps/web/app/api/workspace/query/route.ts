@@ -1,4 +1,4 @@
-import { duckdbQuery } from "@/lib/workspace";
+import { duckdbQueryAsync } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -38,6 +38,6 @@ export async function POST(req: Request) {
     );
   }
 
-  const rows = duckdbQuery(sql);
+	const rows = await duckdbQueryAsync(sql);
   return Response.json({ rows });
 }

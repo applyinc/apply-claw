@@ -117,6 +117,7 @@ When creating objects with specific use cases, set `default_view` and `view_sett
 | enum                | is, is_not, is_any_of, is_none_of, is_empty, is_not_empty                                  |
 | boolean             | is_true, is_false, is_empty, is_not_empty                                                  |
 | relation/user       | has_any, has_none, has_all, is_empty, is_not_empty                                         |
+| tags                | contains, not_contains, is_empty, is_not_empty                                             |
 
 **System timestamp columns are always available on every object entry**:
 
@@ -685,18 +686,19 @@ YAML
 
 ## Field Types Reference
 
-| Type     | Description                           | Storage            | Query Cast  |
-| -------- | ------------------------------------- | ------------------ | ----------- |
-| text     | General text, names, descriptions     | VARCHAR            | none        |
-| email    | Email addresses (validated)           | VARCHAR            | none        |
-| phone    | Phone numbers (normalized)            | VARCHAR            | none        |
-| number   | Numeric values (prices, scores)       | VARCHAR            | `::NUMERIC` |
-| boolean  | Yes/no flags                          | "true"/"false"     | `= 'true'`  |
-| date     | ISO 8601 dates                        | VARCHAR            | `::DATE`    |
-| richtext | Rich text for Notes fields            | VARCHAR            | none        |
-| user     | Member ID from workspace_context.yaml | VARCHAR            | none        |
-| enum     | Dropdown with predefined values       | VARCHAR            | none        |
-| relation | Link to entry in another object       | VARCHAR (entry ID) | none        |
+| Type     | Description                           | Storage                   | Query Cast  |
+| -------- | ------------------------------------- | ------------------------- | ----------- |
+| text     | General text, names, descriptions     | VARCHAR                   | none        |
+| email    | Email addresses (validated)           | VARCHAR                   | none        |
+| phone    | Phone numbers (normalized)            | VARCHAR                   | none        |
+| number   | Numeric values (prices, scores)       | VARCHAR                   | `::NUMERIC` |
+| boolean  | Yes/no flags                          | "true"/"false"            | `= 'true'`  |
+| date     | ISO 8601 dates                        | VARCHAR                   | `::DATE`    |
+| richtext | Rich text for Notes fields            | VARCHAR                   | none        |
+| user     | Member ID from workspace_context.yaml | VARCHAR                   | none        |
+| enum     | Dropdown with predefined values       | VARCHAR                   | none        |
+| relation | Link to entry in another object       | VARCHAR (entry ID)        | none        |
+| tags     | Free-form string array (labels, tags) | VARCHAR (JSON array str)  | none        |
 
 ### System Timestamp Columns (Always Present)
 
@@ -716,6 +718,8 @@ Important:
 **enum fields**: Field definition stores `enum_values` as JSON array. Entry stores the selected value string. `enum_multiple = true` for multi-select (value stored as JSON array string).
 
 **relation fields**: Field stores `related_object_id` and `relationship_type`. Entry stores the related entry ID. `many_to_one` for single select, `many_to_many` for multi-select (JSON array of IDs).
+
+**tags fields**: Free-form string arrays for labels, domains, skills, keywords, etc. Value stored as JSON array string: `'["tag1","tag2","tag3"]'`. No predefined values — users can type any value. Displayed as removable chips in the UI.
 
 ## CRM Patterns
 
@@ -1010,6 +1014,7 @@ After creating a `.report.json` file:
 - **USER FIELDS**: Resolve member name to ID from `workspace_context.yaml` BEFORE inserting
 - **ENUM FIELDS**: Use type "enum" with `enum_values` JSON array
 - **RELATION FIELDS**: Use type "relation" with `related_object_id`
+- **TAGS FIELDS**: Use type "tags" for free-form string arrays. Value stored as `'["tag1","tag2"]'`
 - **KANBAN**: Use `default_view = 'kanban'`, set `view_settings.kanbanField: "Status"`, auto-create Status and Assigned To fields
 - **CALENDAR**: Use `default_view = 'calendar'`, set `view_settings.calendarDateField` to the date field
 - **TIMELINE**: Use `default_view = 'timeline'`, set `view_settings.timelineStartField` and optionally `timelineEndField`

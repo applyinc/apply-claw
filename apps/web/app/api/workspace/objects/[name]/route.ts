@@ -1,6 +1,14 @@
-import { duckdbPath, parseRelationValue, resolveDuckdbBin, findDuckDBForObject, duckdbQueryOnFile, discoverDuckDBPaths, getObjectViews } from "@/lib/workspace";
+import {
+  duckdbPathAsync,
+  parseRelationValue,
+  resolveDuckdbBin,
+  findDuckDBForObjectAsync,
+  duckdbQueryOnFileAsync,
+  discoverDuckDBPathsAsync,
+  getObjectViews,
+  duckdbExecOnFileAsync,
+} from "@/lib/workspace";
 import { deserializeFilters, buildWhereClause, buildOrderByClause, type FieldMeta } from "@/lib/object-filters";
-import { execSync } from "node:child_process";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -49,29 +57,25 @@ type EavRow = {
 
 // --- Schema migration (idempotent, runs once per process) ---
 
-const migratedDbs = new Set<string>();
+const migratedDbs = new Map<string, Promise<void>>();
 
 /** Ensure the display_field column exists on a specific DB file. */
-function ensureDisplayFieldColumn(dbFile: string) {
-  if (migratedDbs.has(dbFile)) {return;}
-  const bin = resolveDuckdbBin();
-  if (!bin) {return;}
-  try {
-    execSync(
-      `'${bin}' '${dbFile}' 'ALTER TABLE objects ADD COLUMN IF NOT EXISTS display_field VARCHAR'`,
-      { encoding: "utf-8", timeout: 5_000, shell: "/bin/sh" },
-    );
-  } catch {
-    // migration might fail on DBs that don't have the objects table — skip
-  }
-  migratedDbs.add(dbFile);
+async function ensureDisplayFieldColumn(dbFile: string): Promise<void> {
+  const existing = migratedDbs.get(dbFile);
+  if (existing) {return existing;}
+  const promise = duckdbExecOnFileAsync(
+    dbFile,
+    "ALTER TABLE objects ADD COLUMN IF NOT EXISTS display_field VARCHAR",
+  ).then(() => undefined);
+  migratedDbs.set(dbFile, promise);
+  return promise;
 }
 
 // --- Helpers ---
 
 /** Scoped query helper: queries a specific DB file. */
-function q<T = Record<string, unknown>>(dbFile: string, sql: string): T[] {
-  return duckdbQueryOnFile<T>(dbFile, sql);
+async function q<T = Record<string, unknown>>(dbFile: string, sql: string): Promise<T[]> {
+  return duckdbQueryOnFileAsync<T>(dbFile, sql);
 }
 
 /**
@@ -141,14 +145,14 @@ function resolveDisplayField(
  * Resolve relation field values to human-readable display labels.
  * All queries target the same DB file where the object lives.
  */
-function resolveRelationLabels(
+async function resolveRelationLabels(
   dbFile: string,
   fields: FieldRow[],
   entries: Record<string, unknown>[],
-): {
+): Promise<{
   labels: Record<string, Record<string, string>>;
   relatedObjectNames: Record<string, string>;
-} {
+}> {
   const labels: Record<string, Record<string, string>> = {};
   const relatedObjectNames: Record<string, string> = {};
 
@@ -157,14 +161,14 @@ function resolveRelationLabels(
   );
 
   for (const rf of relationFields) {
-    const relatedObjs = q<ObjectRow>(dbFile,
+    const relatedObjs = await q<ObjectRow>(dbFile,
       `SELECT * FROM objects WHERE id = '${sqlEscape(rf.related_object_id!)}' LIMIT 1`,
     );
     if (relatedObjs.length === 0) {continue;}
     const relObj = relatedObjs[0];
     relatedObjectNames[rf.name] = relObj.name;
 
-    const relFields = q<FieldRow>(dbFile,
+    const relFields = await q<FieldRow>(dbFile,
       `SELECT * FROM fields WHERE object_id = '${sqlEscape(relObj.id)}' ORDER BY sort_order`,
     );
     const displayFieldName = resolveDisplayField(relObj, relFields);
@@ -196,7 +200,7 @@ function resolveRelationLabels(
     const idList = Array.from(entryIds)
       .map((id) => `'${sqlEscape(id)}'`)
       .join(",");
-    const displayRows = q<{ entry_id: string; value: string }>(dbFile,
+    const displayRows = await q<{ entry_id: string; value: string }>(dbFile,
       `SELECT e.id as entry_id, ef.value
        FROM entries e
        JOIN entry_fields ef ON ef.entry_id = e.id
@@ -232,12 +236,12 @@ type ReverseRelation = {
  * Find reverse relations: other objects with relation fields pointing TO this object.
  * Searches across ALL discovered databases to catch cross-DB relations.
  */
-function findReverseRelations(objectId: string): ReverseRelation[] {
-  const dbPaths = discoverDuckDBPaths();
+async function findReverseRelations(objectId: string): Promise<ReverseRelation[]> {
+  const dbPaths = await discoverDuckDBPathsAsync();
   const result: ReverseRelation[] = [];
 
   for (const db of dbPaths) {
-    const reverseFields = q<
+    const reverseFields = await q<
       FieldRow & { source_object_id: string; source_object_name: string }
     >(db,
       `SELECT f.*, f.object_id as source_object_id, o.name as source_object_name
@@ -248,17 +252,17 @@ function findReverseRelations(objectId: string): ReverseRelation[] {
     );
 
     for (const rrf of reverseFields) {
-      const sourceObjs = q<ObjectRow>(db,
+      const sourceObjs = await q<ObjectRow>(db,
         `SELECT * FROM objects WHERE id = '${sqlEscape(rrf.source_object_id)}' LIMIT 1`,
       );
       if (sourceObjs.length === 0) {continue;}
 
-      const sourceFields = q<FieldRow>(db,
+      const sourceFields = await q<FieldRow>(db,
         `SELECT * FROM fields WHERE object_id = '${sqlEscape(rrf.source_object_id)}' ORDER BY sort_order`,
       );
       const displayFieldName = resolveDisplayField(sourceObjs[0], sourceFields);
 
-      const refRows = q<{ source_entry_id: string; target_value: string }>(db,
+      const refRows = await q<{ source_entry_id: string; target_value: string }>(db,
         `SELECT ef.entry_id as source_entry_id, ef.value as target_value
          FROM entry_fields ef
          WHERE ef.field_id = '${sqlEscape(rrf.id)}'
@@ -270,7 +274,7 @@ function findReverseRelations(objectId: string): ReverseRelation[] {
 
       const sourceEntryIds = [...new Set(refRows.map((r) => r.source_entry_id))];
       const idList = sourceEntryIds.map((id) => `'${sqlEscape(id)}'`).join(",");
-      const displayRows = q<{ entry_id: string; value: string }>(db,
+      const displayRows = await q<{ entry_id: string; value: string }>(db,
         `SELECT ef.entry_id, ef.value
          FROM entry_fields ef
          JOIN fields f ON f.id = ef.field_id
@@ -333,10 +337,10 @@ export async function GET(
   }
 
   // Find which DuckDB file contains this object (searches all discovered DBs)
-  const dbFile = findDuckDBForObject(name);
+  const dbFile = await findDuckDBForObjectAsync(name);
   if (!dbFile) {
     // Fall back to primary DB check for a friendlier error message
-    if (!duckdbPath()) {
+    if (!await duckdbPathAsync()) {
       return Response.json(
         { error: "DuckDB database not found" },
         { status: 404 },
@@ -349,10 +353,10 @@ export async function GET(
   }
 
   // Ensure display_field column exists on this specific DB
-  ensureDisplayFieldColumn(dbFile);
+  await ensureDisplayFieldColumn(dbFile);
 
   // All queries below target the specific DB that owns this object
-  const objects = q<ObjectRow>(dbFile,
+  const objects = await q<ObjectRow>(dbFile,
     `SELECT * FROM objects WHERE name = '${name}' LIMIT 1`,
   );
 
@@ -365,11 +369,15 @@ export async function GET(
 
   const obj = objects[0];
 
-  const fields = q<FieldRow>(dbFile,
+  // Keep same-DB schema reads sequential: parallel DuckDB CLI processes against
+  // one file can intermittently return empty results, which makes the object
+  // page oscillate between full and partial schemas during live refreshes.
+  const fields = await q<FieldRow>(
+    dbFile,
     `SELECT * FROM fields WHERE object_id = '${obj.id}' ORDER BY sort_order`,
   );
-
-  const statuses = q<StatusRow>(dbFile,
+  const statuses = await q<StatusRow>(
+    dbFile,
     `SELECT * FROM statuses WHERE object_id = '${obj.id}' ORDER BY sort_order`,
   );
 
@@ -429,18 +437,18 @@ export async function GET(
 
   try {
     // Get total count with same WHERE clause but no LIMIT/OFFSET
-    const countResult = q<{ cnt: number }>(dbFile,
+    const countResult = await q<{ cnt: number }>(dbFile,
       `SELECT COUNT(*) as cnt FROM v_${name}${whereClause}`,
     );
     totalCount = countResult[0]?.cnt ?? 0;
 
-    const pivotEntries = q(dbFile,
+    const pivotEntries = await q(dbFile,
       `SELECT * FROM v_${name}${whereClause}${orderByClause}${limitClause}`,
     );
     entries = pivotEntries;
   } catch {
     // Pivot view might not exist or filter SQL may not apply; fall back
-    const rawRows = q<EavRow>(dbFile,
+    const rawRows = await q<EavRow>(dbFile,
       `SELECT e.id as entry_id, e.created_at, e.updated_at,
               f.name as field_name, ef.value
        FROM entries e
@@ -460,7 +468,7 @@ export async function GET(
   }));
 
   const { labels: relationLabels, relatedObjectNames } =
-    resolveRelationLabels(dbFile, fields, entries);
+    await resolveRelationLabels(dbFile, fields, entries);
 
   const enrichedFields = parsedFields.map((f) => ({
     ...f,
@@ -468,7 +476,7 @@ export async function GET(
       f.type === "relation" ? relatedObjectNames[f.name] : undefined,
   }));
 
-  const reverseRelations = findReverseRelations(obj.id);
+  const reverseRelations = await findReverseRelations(obj.id);
 
   const effectiveDisplayField = resolveDisplayField(obj, fields);
 

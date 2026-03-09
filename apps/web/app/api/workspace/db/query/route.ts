@@ -1,4 +1,4 @@
-import { safeResolvePath, duckdbQueryOnFile } from "@/lib/workspace";
+import { safeResolvePath, duckdbQueryOnFileAsync } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -51,6 +51,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const rows = duckdbQueryOnFile(absPath, sql);
+	const rows = await duckdbQueryOnFileAsync(absPath, sql);
   return Response.json({ rows, sql });
 }

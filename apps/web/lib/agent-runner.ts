@@ -603,6 +603,7 @@ class GatewayProcessHandle
 					...(sessionKey ? { sessionKey } : {}),
 					deliver: false,
 					channel: "webchat",
+					thinking: "xhigh",
 					lane: this.params.lane ?? "web",
 					timeout: 0,
 				});
@@ -668,6 +669,7 @@ class GatewayProcessHandle
 			try {
 				const patch = await this.client.request("sessions.patch", {
 					key: sessionKey,
+					thinkingLevel: "xhigh",
 					verboseLevel: "full",
 					reasoningLevel: "on",
 				});
@@ -982,11 +984,29 @@ export function parseAgentErrorMessage(
 
 	// Direct error string
 	if (typeof data.error === "string") {return parseErrorBody(data.error);}
+	// Nested error object with message
+	if (typeof data.error === "object" && data.error !== null) {
+		const nested = data.error as Record<string, unknown>;
+		if (typeof nested.message === "string") {return parseErrorBody(nested.message);}
+	}
 	// Message field
 	if (typeof data.message === "string") {return parseErrorBody(data.message);}
 	// errorMessage field (may contain "402 {json}")
 	if (typeof data.errorMessage === "string")
 		{return parseErrorBody(data.errorMessage);}
+	// Common alternative fields
+	if (typeof data.detail === "string") {return parseErrorBody(data.detail);}
+	if (typeof data.reason === "string") {return parseErrorBody(data.reason);}
+	if (typeof data.description === "string") {return parseErrorBody(data.description);}
+	// Error code as last-resort hint
+	if (typeof data.code === "string" && data.code.trim()) {return data.code;}
+
+	// Fallback: serialize the entire payload so the error is never silently lost
+	try {
+		const json = JSON.stringify(data);
+		if (json !== "{}" && json.length <= 500) {return json;}
+		if (json.length > 500) {return `${json.slice(0, 497)}...`;}
+	} catch { /* ignore */ }
 
 	return undefined;
 }

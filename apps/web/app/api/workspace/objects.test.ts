@@ -8,13 +8,18 @@ vi.mock("node:child_process", () => ({
 // Mock workspace
 vi.mock("@/lib/workspace", () => ({
   duckdbPath: vi.fn(() => null),
+  duckdbPathAsync: vi.fn(async () => null),
   duckdbQueryOnFile: vi.fn(() => []),
+  duckdbQueryOnFileAsync: vi.fn(async () => []),
   duckdbExecOnFile: vi.fn(() => true),
+  duckdbExecOnFileAsync: vi.fn(async () => true),
   findDuckDBForObject: vi.fn(() => null),
+  findDuckDBForObjectAsync: vi.fn(async () => null),
   getObjectViews: vi.fn(() => ({ views: [], activeView: null })),
   parseRelationValue: vi.fn((v: string | null) => (v ? [v] : [])),
   resolveDuckdbBin: vi.fn(() => null),
   discoverDuckDBPaths: vi.fn(() => []),
+  discoverDuckDBPathsAsync: vi.fn(async () => []),
 }));
 
 describe("Workspace Objects API", () => {
@@ -25,13 +30,18 @@ describe("Workspace Objects API", () => {
     }));
     vi.mock("@/lib/workspace", () => ({
       duckdbPath: vi.fn(() => null),
+      duckdbPathAsync: vi.fn(async () => null),
       duckdbQueryOnFile: vi.fn(() => []),
+      duckdbQueryOnFileAsync: vi.fn(async () => []),
       duckdbExecOnFile: vi.fn(() => true),
+      duckdbExecOnFileAsync: vi.fn(async () => true),
       findDuckDBForObject: vi.fn(() => null),
+      findDuckDBForObjectAsync: vi.fn(async () => null),
       getObjectViews: vi.fn(() => ({ views: [], activeView: null })),
       parseRelationValue: vi.fn((v: string | null) => (v ? [v] : [])),
       resolveDuckdbBin: vi.fn(() => null),
       discoverDuckDBPaths: vi.fn(() => []),
+      discoverDuckDBPathsAsync: vi.fn(async () => []),
     }));
   });
 
@@ -67,10 +77,10 @@ describe("Workspace Objects API", () => {
     });
 
     it("returns 404 when object not found", async () => {
-      const { findDuckDBForObject, resolveDuckdbBin, duckdbPath: mockDuckdbPath } = await import("@/lib/workspace");
+      const { findDuckDBForObjectAsync, resolveDuckdbBin, duckdbPathAsync: mockDuckdbPath } = await import("@/lib/workspace");
       vi.mocked(resolveDuckdbBin).mockReturnValue("/opt/homebrew/bin/duckdb");
-      vi.mocked(findDuckDBForObject).mockReturnValue(null);
-      vi.mocked(mockDuckdbPath).mockReturnValue(null);
+      vi.mocked(findDuckDBForObjectAsync).mockResolvedValue(null);
+      vi.mocked(mockDuckdbPath).mockResolvedValue(null);
 
       const { GET } = await import("./objects/[name]/route.js");
       const res = await GET(
@@ -81,14 +91,14 @@ describe("Workspace Objects API", () => {
     });
 
     it("returns object schema and entries when found", async () => {
-      const { findDuckDBForObject, duckdbQueryOnFile, resolveDuckdbBin, discoverDuckDBPaths } = await import("@/lib/workspace");
-      vi.mocked(findDuckDBForObject).mockReturnValue("/ws/workspace.duckdb");
+      const { findDuckDBForObjectAsync, duckdbQueryOnFileAsync, resolveDuckdbBin, discoverDuckDBPathsAsync } = await import("@/lib/workspace");
+      vi.mocked(findDuckDBForObjectAsync).mockResolvedValue("/ws/workspace.duckdb");
       vi.mocked(resolveDuckdbBin).mockReturnValue("/opt/homebrew/bin/duckdb");
-      vi.mocked(discoverDuckDBPaths).mockReturnValue(["/ws/workspace.duckdb"]);
+      vi.mocked(discoverDuckDBPathsAsync).mockResolvedValue(["/ws/workspace.duckdb"]);
 
       // Mock different queries with a call counter
       let queryCall = 0;
-      vi.mocked(duckdbQueryOnFile).mockImplementation(() => {
+      vi.mocked(duckdbQueryOnFileAsync).mockImplementation(async () => {
         queryCall++;
         if (queryCall === 1) {
           // Object row
@@ -120,18 +130,64 @@ describe("Workspace Objects API", () => {
       expect(json.fields).toBeDefined();
     });
 
+    it("loads same-db schema queries sequentially (prevents oscillating empty fields during live refresh)", async () => {
+      const {
+        findDuckDBForObjectAsync,
+        duckdbQueryOnFileAsync,
+        resolveDuckdbBin,
+        discoverDuckDBPathsAsync,
+      } = await import("@/lib/workspace");
+      vi.mocked(findDuckDBForObjectAsync).mockResolvedValue("/ws/workspace.duckdb");
+      vi.mocked(resolveDuckdbBin).mockReturnValue("/opt/homebrew/bin/duckdb");
+      vi.mocked(discoverDuckDBPathsAsync).mockResolvedValue(["/ws/workspace.duckdb"]);
+
+      let inFlight = 0;
+      vi.mocked(duckdbQueryOnFileAsync).mockImplementation(async (_dbFile, sql) => {
+        inFlight += 1;
+        const concurrent = inFlight > 1;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+
+        if (sql.includes("SELECT * FROM objects WHERE name")) {
+          return [{ id: "obj1", name: "company", description: "Company object" }] as never;
+        }
+        if (sql.includes("SELECT * FROM fields")) {
+          return concurrent
+            ? ([] as never)
+            : ([{ id: "f1", name: "Company Name", type: "text", sort_order: 0 }] as never);
+        }
+        if (sql.includes("SELECT * FROM statuses")) {
+          return concurrent
+            ? ([] as never)
+            : ([{ id: "status1", name: "Active", sort_order: 0 }] as never);
+        }
+        return [] as never;
+      });
+
+      const { GET } = await import("./objects/[name]/route.js");
+      const res = await GET(
+        new Request("http://localhost/api/workspace/objects/company"),
+        { params: Promise.resolve({ name: "company" }) },
+      );
+
+      expect(res.status).toBe(200);
+      const json = await res.json();
+      expect(json.fields).toHaveLength(1);
+      expect(json.statuses).toHaveLength(1);
+    });
+
     it("returns saved views and active view from object yaml metadata", async () => {
       const {
-        findDuckDBForObject,
-        duckdbQueryOnFile,
+        findDuckDBForObjectAsync,
+        duckdbQueryOnFileAsync,
         resolveDuckdbBin,
-        discoverDuckDBPaths,
+        discoverDuckDBPathsAsync,
         getObjectViews,
       } = await import("@/lib/workspace");
 
-      vi.mocked(findDuckDBForObject).mockReturnValue("/ws/workspace.duckdb");
+      vi.mocked(findDuckDBForObjectAsync).mockResolvedValue("/ws/workspace.duckdb");
       vi.mocked(resolveDuckdbBin).mockReturnValue("/opt/homebrew/bin/duckdb");
-      vi.mocked(discoverDuckDBPaths).mockReturnValue(["/ws/workspace.duckdb"]);
+      vi.mocked(discoverDuckDBPathsAsync).mockResolvedValue(["/ws/workspace.duckdb"]);
       vi.mocked(getObjectViews).mockReturnValue({
         views: [
           {
@@ -151,7 +207,7 @@ describe("Workspace Objects API", () => {
       });
 
       let queryCall = 0;
-      vi.mocked(duckdbQueryOnFile).mockImplementation(() => {
+      vi.mocked(duckdbQueryOnFileAsync).mockImplementation(async () => {
         queryCall += 1;
         if (queryCall === 1) {
           return [{ id: "obj1", name: "leads", description: "Leads object", icon: "star" }];
@@ -179,8 +235,8 @@ describe("Workspace Objects API", () => {
     });
 
     it("accepts underscored names", async () => {
-      const { findDuckDBForObject } = await import("@/lib/workspace");
-      vi.mocked(findDuckDBForObject).mockReturnValue(null);
+      const { findDuckDBForObjectAsync } = await import("@/lib/workspace");
+      vi.mocked(findDuckDBForObjectAsync).mockResolvedValue(null);
 
       const { GET } = await import("./objects/[name]/route.js");
       const res = await GET(

@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { RelationSelect } from "./relation-select";
 import { FormattedFieldValue } from "./formatted-field-value";
+import { formatWorkspaceFieldValue } from "@/lib/workspace-cell-format";
+import { parseTagsValue } from "@/lib/parse-tags";
 
 
 function safeString(val: unknown): string {
@@ -211,6 +213,116 @@ function RelationChips({
   );
 }
 
+function TagsBadges({ value }: { value: unknown }) {
+  const tags = parseTagsValue(value);
+  if (tags.length === 0) {return <EmptyValue />;}
+  const chipStyle = { background: "rgba(148, 163, 184, 0.12)", border: "1px solid var(--color-border)" };
+  return (
+    <span className="flex items-center gap-1.5 flex-wrap">
+      {tags.map((tag) => {
+        const formatted = formatWorkspaceFieldValue(tag);
+        const isLink = formatted.kind === "link" && formatted.href;
+        if (isLink) {
+          return (
+            <a
+              key={tag}
+              href={formatted.href!}
+              target={formatted.linkType === "url" || formatted.linkType === "file" ? "_blank" : undefined}
+              rel={formatted.linkType === "url" || formatted.linkType === "file" ? "noopener noreferrer" : undefined}
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium underline-offset-2 hover:underline"
+              style={{ ...chipStyle, color: "var(--color-accent)" }}
+            >
+              {formatted.text}
+            </a>
+          );
+        }
+        return (
+          <span
+            key={tag}
+            className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium"
+            style={{ ...chipStyle, color: "var(--color-text-muted)" }}
+          >
+            {tag}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function TagsEditInput({
+  value,
+  onChange,
+  autoFocus,
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  autoFocus?: boolean;
+}) {
+  const tags = parseTagsValue(value);
+  const [inputVal, setInputVal] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (autoFocus && inputRef.current) {inputRef.current.focus();}
+  }, [autoFocus]);
+
+  const addTag = (tag: string) => {
+    const t = tag.trim();
+    if (!t || tags.includes(t)) {return;}
+    const next = [...tags, t];
+    onChange(JSON.stringify(next));
+    setInputVal("");
+  };
+
+  const removeTag = (tag: string) => {
+    const next = tags.filter((t) => t !== tag);
+    onChange(next.length > 0 ? JSON.stringify(next) : "");
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap min-h-[1.75rem]">
+      {tags.map((tag) => (
+        <span
+          key={tag}
+          className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full text-xs font-medium"
+          style={{ background: "rgba(148, 163, 184, 0.12)", color: "var(--color-text-muted)", border: "1px solid var(--color-border)" }}
+        >
+          {tag}
+          <button
+            type="button"
+            onClick={() => removeTag(tag)}
+            className="ml-0.5 hover:opacity-70"
+            style={{ color: "var(--color-text-muted)" }}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+          </button>
+        </span>
+      ))}
+      <input
+        ref={inputRef}
+        type="text"
+        value={inputVal}
+        onChange={(e) => setInputVal(e.target.value)}
+        onKeyDown={(e) => {
+          if ((e.key === "Enter" || e.key === ",") && inputVal.trim()) {
+            e.preventDefault();
+            addTag(inputVal);
+          }
+          if (e.key === "Backspace" && !inputVal && tags.length > 0) {
+            removeTag(tags[tags.length - 1]);
+          }
+        }}
+        onBlur={() => { if (inputVal.trim()) {addTag(inputVal);} }}
+        placeholder={tags.length === 0 ? "Type and press Enter..." : ""}
+        className="flex-1 min-w-[80px] text-sm outline-none bg-transparent"
+        style={{ color: "var(--color-text)" }}
+      />
+    </div>
+  );
+}
+
 function EmptyValue() {
   return (
     <span style={{ color: "var(--color-text-muted)", opacity: 0.5 }}>--</span>
@@ -311,6 +423,8 @@ function FieldValue({
           onNavigateEntry={onNavigateEntry}
         />
       );
+    case "tags":
+      return <TagsBadges value={value} />;
     case "email":
     case "number":
     case "date":
@@ -319,7 +433,7 @@ function FieldValue({
     case "file":
       return <FormattedFieldValue value={value} fieldType={field.type} mode="detail" />;
     case "richtext":
-      return <span className="whitespace-pre-wrap">{safeString(value)}</span>;
+      return <FormattedFieldValue value={value} fieldType={field.type} mode="detail" />;
     default:
       return <FormattedFieldValue value={value} fieldType={field.type} mode="detail" />;
   }
@@ -556,7 +670,20 @@ export function EntryDetailModal({
                       style={{ color: "var(--color-text)" }}
                     >
                       {editingField === field.name ? (
-                        field.type === "relation" && field.related_object_name ? (
+                        field.type === "tags" ? (
+                          <div className="flex items-center gap-2 w-full">
+                            <div className="flex-1 px-2 py-1 rounded-lg" style={{ background: "var(--color-surface-hover)", border: "2px solid var(--color-accent)" }}>
+                              <TagsEditInput
+                                value={safeString(value)}
+                                onChange={(v) => { void handleSaveField(field.name, v); }}
+                                autoFocus
+                              />
+                            </div>
+                            <button type="button" onClick={() => setEditingField(null)} className="px-2 py-1 text-xs rounded-lg flex-shrink-0" style={{ color: "var(--color-text-muted)", border: "1px solid var(--color-border)" }}>
+                              Done
+                            </button>
+                          </div>
+                        ) : field.type === "relation" && field.related_object_name ? (
                           <div className="flex items-center gap-2 w-full">
                             <div className="flex-1">
                               <RelationSelect

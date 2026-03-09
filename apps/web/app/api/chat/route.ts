@@ -45,7 +45,8 @@ export async function POST(req: Request) {
 		sessionId,
 		sessionKey,
 		distinctId,
-	}: { messages: UIMessage[]; sessionId?: string; sessionKey?: string; distinctId?: string } = await req.json();
+		userHtml,
+	}: { messages: UIMessage[]; sessionId?: string; sessionKey?: string; distinctId?: string; userHtml?: string } = await req.json();
 
 	const lastUserMessage = messages.filter((m) => m.role === "user").pop();
 	const userText =
@@ -106,16 +107,17 @@ export async function POST(req: Request) {
 				task: info.task,
 			});
 		}
-		persistSubscribeUserMessage(sessionKey, {
+		await persistSubscribeUserMessage(sessionKey, {
 			id: lastUserMessage.id,
 			text: userText,
 		});
 		reactivateSubscribeRun(sessionKey, agentMessage);
 	} else if (sessionId && lastUserMessage) {
-		persistUserMessage(sessionId, {
+		await persistUserMessage(sessionId, {
 			id: lastUserMessage.id,
 			content: userText,
 			parts: lastUserMessage.parts as unknown[],
+			html: userHtml,
 		});
 		try {
 			startRun({

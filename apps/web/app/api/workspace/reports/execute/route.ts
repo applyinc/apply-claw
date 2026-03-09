@@ -1,4 +1,4 @@
-import { duckdbQuery } from "@/lib/workspace";
+import { duckdbQueryAsync } from "@/lib/workspace";
 import { buildFilterClauses, injectFilters, checkSqlSafety } from "@/lib/report-filters";
 import type { FilterEntry } from "@/lib/report-filters";
 import { trackServer } from "@/lib/telemetry";
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   const finalSql = injectFilters(sql, filterClauses);
 
   try {
-    const rows = duckdbQuery(finalSql);
+		const rows = await duckdbQueryAsync(finalSql);
     trackServer("report_executed");
     return Response.json({ rows, sql: finalSql });
   } catch (err) {

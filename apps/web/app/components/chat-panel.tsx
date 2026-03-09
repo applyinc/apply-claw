@@ -765,6 +765,7 @@ type FileScopedSession = {
 type QueuedMessage = {
 	id: string;
 	text: string;
+	html: string;
 	mentionedFiles: Array<{ name: string; path: string }>;
 	attachedFiles: AttachedFile[];
 	createdAt: number;
@@ -856,6 +857,9 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 		const [isReconnecting, setIsReconnecting] = useState(false);
 		const reconnectAbortRef = useRef<AbortController | null>(null);
 
+		// ── Stream-level error (empty response detection) ──
+		const [streamError, setStreamError] = useState<string | null>(null);
+
 		// Track persisted messages to avoid double-saves
 		const savedMessageIdsRef = useRef<Set<string>>(new Set());
 		// Set when /new or + triggers a new session
@@ -867,6 +871,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 		const [fileSessions, setFileSessions] = useState<
 			FileScopedSession[]
 		>([]);
+
+		// ── Rich HTML for user messages (keyed by message ID or text fallback) ──
+		const userHtmlMapRef = useRef(new Map<string, string>());
+		const pendingHtmlRef = useRef<string | null>(null);
 
 		// ── Message queue (messages to send after current run completes) ──
 		const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
@@ -926,10 +934,16 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 				new DefaultChatTransport({
 					api: "/api/chat",
 					body: () => {
+						const extra: Record<string, unknown> = {};
 						const sk = subagentSessionKeyRef.current;
-						if (sk) {return { sessionKey: sk };}
+						if (sk) {extra.sessionKey = sk;}
 						const sid = sessionIdRef.current;
-						return sid ? { sessionId: sid } : {};
+						if (sid) {extra.sessionId = sid;}
+						if (pendingHtmlRef.current) {
+							extra.userHtml = pendingHtmlRef.current;
+							pendingHtmlRef.current = null;
+						}
+						return extra;
 					},
 				}),
 			[],
@@ -1195,11 +1209,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 							role: "user" | "assistant";
 							content: string;
 							parts?: Array<Record<string, unknown>>;
+							html?: string;
 							_streaming?: boolean;
 						}> = msgData.messages || [];
 
-						// Filter out in-progress streaming messages
-						// (will be rebuilt from the live SSE stream)
 						const hasStreaming = sessionMessages.some(
 							(m) => m._streaming,
 						);
@@ -1208,6 +1221,12 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 									(m) => !m._streaming,
 								)
 							: sessionMessages;
+
+						for (const msg of completedMessages) {
+							if (msg.role === "user" && msg.html) {
+								userHtmlMapRef.current.set(msg.id, msg.html);
+							}
+						}
 
 						const uiMessages = completedMessages.map(
 							(msg) => {
@@ -1224,9 +1243,9 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 								};
 							},
 						);
-					if (!cancelled) {
-						setMessages(uiMessages);
-					}
+						if (!cancelled) {
+							setMessages(uiMessages);
+						}
 
 						if (!cancelled) {
 							await attemptReconnect(
@@ -1292,6 +1311,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 							role: "user" | "assistant";
 							content: string;
 							parts?: Array<Record<string, unknown>>;
+							html?: string;
 							_streaming?: boolean;
 						}> = msgData.messages || [];
 
@@ -1300,6 +1320,11 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 							: sessionMessages;
 
 						if (completedMessages.length > 0) {
+							for (const msg of completedMessages) {
+								if (msg.role === "user" && msg.html) {
+									userHtmlMapRef.current.set(msg.id, msg.html);
+								}
+							}
 							const uiMessages = completedMessages.map((msg) => {
 								savedMessageIdsRef.current.add(msg.id);
 								return {
@@ -1313,7 +1338,6 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 								setMessages(baseMessages);
 							}
 						}
-
 					} else {
 						// No persisted session file — use task message only
 					}
@@ -1427,6 +1451,36 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 			onSessionsChange,
 		]);
 
+		// ── Empty-stream error detection ──
+		// When the stream completes (submitted/streaming → ready) but no
+		// assistant message was produced, surface an error so the user knows
+		// the request was lost.
+		useEffect(() => {
+			const wasActive =
+				prevStatusRef.current === "streaming" ||
+				prevStatusRef.current === "submitted";
+			const isNowReady = status === "ready";
+
+			if (wasActive && isNowReady) {
+				const lastMsg = messages[messages.length - 1];
+				const hasAssistantContent =
+					lastMsg?.role === "assistant" &&
+					lastMsg.parts.some(
+						(p) =>
+							(p.type === "text" && (p as { text: string }).text.trim().length > 0) ||
+							p.type === "tool-invocation",
+					);
+				if (!hasAssistantContent && !error) {
+					setStreamError("No response received from agent.");
+				} else {
+					setStreamError(null);
+				}
+			}
+			if (status === "submitted") {
+				setStreamError(null);
+			}
+		}, [status, messages, error]);
+
 		// ── Actions ──
 
 		// Ref for handleNewSession so handleEditorSubmit doesn't depend on the hook order
@@ -1438,6 +1492,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 			async (
 				text: string,
 				mentionedFiles: Array<{ name: string; path: string }>,
+				html: string,
 				overrideAttachments?: AttachedFile[],
 			) => {
 				const hasText = text.trim().length > 0;
@@ -1466,7 +1521,6 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 
 				// Queue the message if the agent is still running.
 				if (isStreaming) {
-					// Clear attachment strip but keep blob URLs alive for queue thumbnails
 					if (!overrideAttachments) {
 						setAttachedFiles([]);
 					}
@@ -1475,6 +1529,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 						{
 							id: crypto.randomUUID(),
 							text: userText,
+							html,
 							mentionedFiles,
 							attachedFiles: currentAttachments,
 							createdAt: Date.now(),
@@ -1505,13 +1560,13 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 					onActiveSessionChange?.(sessionId);
 					onSessionsChange?.();
 
-				if (filePath) {
-					void fetchFileSessionsRef.current?.().then(
-						(sessions) => {
-							setFileSessions(sessions);
-						},
-					);
-				}
+					if (filePath) {
+						void fetchFileSessionsRef.current?.().then(
+							(sessions) => {
+								setFileSessions(sessions);
+							},
+						);
+					}
 				}
 
 				// Build message with optional attachment prefix
@@ -1535,10 +1590,13 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 					isFirstFileMessageRef.current = false;
 				}
 
-			// Reset scroll lock so we auto-scroll to the new user message
-			userScrolledAwayRef.current = false;
-			void sendMessage({ text: messageText });
-		},
+				// Store HTML for display and pipe to server via transport
+				userHtmlMapRef.current.set(messageText, html);
+				pendingHtmlRef.current = html;
+
+				userScrolledAwayRef.current = false;
+				void sendMessage({ text: messageText });
+			},
 			[
 				attachedFiles,
 				isStreaming,
@@ -1570,7 +1628,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 				}
 				// Use a microtask so React can settle the status update first.
 				queueMicrotask(() => {
-					void handleEditorSubmit(next.text, next.mentionedFiles, next.attachedFiles);
+					void handleEditorSubmit(next.text, next.mentionedFiles, next.html, next.attachedFiles);
 				});
 			}
 		}, [status, queuedMessages, handleEditorSubmit]);
@@ -1607,6 +1665,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 						role: "user" | "assistant";
 						content: string;
 						parts?: Array<Record<string, unknown>>;
+						html?: string;
 						_streaming?: boolean;
 					}> = data.messages || [];
 
@@ -1619,39 +1678,46 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 							)
 						: sessionMessages;
 
-				const uiMessages = completedMessages.map(
-					(msg) => {
-						savedMessageIdsRef.current.add(msg.id);
-						return {
-							id: msg.id,
-							role: msg.role,
-							parts: (msg.parts ?? [
-								{
-									type: "text" as const,
-									text: msg.content,
-								},
-							]) as UIMessage["parts"],
-						};
-					},
-				);
+					userHtmlMapRef.current.clear();
+					for (const msg of completedMessages) {
+						if (msg.role === "user" && msg.html) {
+							userHtmlMapRef.current.set(msg.id, msg.html);
+						}
+					}
 
-				setMessages(uiMessages);
+					const uiMessages = completedMessages.map(
+						(msg) => {
+							savedMessageIdsRef.current.add(msg.id);
+							return {
+								id: msg.id,
+								role: msg.role,
+								parts: (msg.parts ?? [
+									{
+										type: "text" as const,
+										text: msg.content,
+									},
+								]) as UIMessage["parts"],
+							};
+						},
+					);
 
-				// Clear loading state *before* reconnecting — the
-				// persisted messages are now visible.  attemptReconnect
-				// manages its own `isReconnecting` state which shows
-				// "Resuming stream..." instead of "Loading session...".
-				setLoadingSession(false);
+					setMessages(uiMessages);
 
-				// Always try to reconnect -- the stream endpoint
-				// returns 404 gracefully if no active run exists,
-				// and this avoids missing runs whose _streaming
-				// flag hasn't been persisted yet.
-				await attemptReconnect(sessionId, uiMessages);
-			} catch (err) {
-				console.error("Error loading session:", err);
-				setLoadingSession(false);
-			}
+					// Clear loading state *before* reconnecting — the
+					// persisted messages are now visible.  attemptReconnect
+					// manages its own `isReconnecting` state which shows
+					// "Resuming stream..." instead of "Loading session...".
+					setLoadingSession(false);
+
+					// Always try to reconnect -- the stream endpoint
+					// returns 404 gracefully if no active run exists,
+					// and this avoids missing runs whose _streaming
+					// flag hasn't been persisted yet.
+					await attemptReconnect(sessionId, uiMessages);
+				} catch (err) {
+					console.error("Error loading session:", err);
+					setLoadingSession(false);
+				}
 			},
 			[
 				currentSessionId,
@@ -1662,19 +1728,19 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 			],
 		);
 
-	const handleNewSession = useCallback(() => {
-		reconnectAbortRef.current?.abort();
-		void stop();
+		const handleNewSession = useCallback(() => {
+			reconnectAbortRef.current?.abort();
+			void stop();
 			setIsReconnecting(false);
 			setCurrentSessionId(null);
 			sessionIdRef.current = null;
 			onActiveSessionChange?.(null);
 			setMessages([]);
 			savedMessageIdsRef.current.clear();
+			userHtmlMapRef.current.clear();
 			isFirstFileMessageRef.current = true;
 			newSessionPendingRef.current = false;
 			setQueuedMessages([]);
-			// Focus the chat input after state updates so "New Chat" is ready to type.
 			requestAnimationFrame(() => {
 				editorRef.current?.focus();
 			});
@@ -1758,7 +1824,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 				await handleStop();
 				// Submit the message after a short delay to let status settle.
 				setTimeout(() => {
-					void handleEditorSubmit(msg.text, msg.mentionedFiles, msg.attachedFiles);
+					void handleEditorSubmit(msg.text, msg.mentionedFiles, msg.html, msg.attachedFiles);
 				}, 100);
 			},
 			[queuedMessages, handleStop, handleEditorSubmit],
@@ -2403,6 +2469,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 								onSubagentClick={onSubagentClick}
 								onFilePathClick={onFilePathClick}
 								sessionId={currentSessionId}
+								userHtmlMap={userHtmlMapRef.current}
 							/>
 						))}
 						{showInlineSpinner && (
@@ -2419,8 +2486,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 					)}
 				</div>
 
-				{/* Transport-level error display */}
-				{error && (
+				{/* Transport / stream-level error display */}
+				{(error || streamError) && (
 					<div
 						className="px-3 py-2 flex items-center gap-2 sticky bottom-[72px] z-10"
 						style={{
@@ -2454,7 +2521,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 								y2="16"
 							/>
 						</svg>
-						<p className="text-xs">{error.message}</p>
+						<p className="text-xs">{error?.message ?? streamError}</p>
 					</div>
 				)}
 				</div>

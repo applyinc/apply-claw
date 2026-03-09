@@ -12,6 +12,15 @@ const promptMocks = vi.hoisted(() => ({
   })),
 }));
 
+const workspaceSeedMocks = vi.hoisted(() => ({
+  discoverWorkspaceDirs: vi.fn((stateDir: string) => [`${stateDir}/workspace`]),
+  syncManagedSkills: vi.fn(() => ({
+    syncedSkills: ["crm", "browser"],
+    workspaceDirs: ["/tmp/.openclaw-dench/workspace"],
+    identityUpdated: true,
+  })),
+}));
+
 const spawnMock = vi.hoisted(() => vi.fn());
 const webRuntimeMocks = vi.hoisted(() => ({
   DEFAULT_WEB_APP_PORT: 3100,
@@ -52,6 +61,11 @@ vi.mock("@clack/prompts", () => ({
   confirm: promptMocks.confirm,
   isCancel: promptMocks.isCancel,
   spinner: promptMocks.spinner,
+}));
+
+vi.mock("./workspace-seed.js", () => ({
+  discoverWorkspaceDirs: workspaceSeedMocks.discoverWorkspaceDirs,
+  syncManagedSkills: workspaceSeedMocks.syncManagedSkills,
 }));
 
 vi.mock("node:child_process", () => ({
@@ -116,6 +130,15 @@ describe("updateWebRuntimeCommand", () => {
     promptMocks.confirm.mockImplementation(async () => true);
     promptMocks.isCancel.mockReset();
     promptMocks.isCancel.mockImplementation(() => false);
+
+    workspaceSeedMocks.discoverWorkspaceDirs.mockReset();
+    workspaceSeedMocks.discoverWorkspaceDirs.mockReturnValue(["/tmp/.openclaw-dench/workspace"]);
+    workspaceSeedMocks.syncManagedSkills.mockReset();
+    workspaceSeedMocks.syncManagedSkills.mockReturnValue({
+      syncedSkills: ["crm", "browser"],
+      workspaceDirs: ["/tmp/.openclaw-dench/workspace"],
+      identityUpdated: true,
+    });
 
     webRuntimeMocks.ensureManagedWebRuntime.mockReset();
     webRuntimeMocks.ensureManagedWebRuntime.mockImplementation(
@@ -206,6 +229,26 @@ describe("updateWebRuntimeCommand", () => {
     );
     expect(webRuntimeMocks.ensureManagedWebRuntime).toHaveBeenCalled();
     expect(summary.majorGate.required).toBe(true);
+  });
+
+  it("syncs managed skills during update and includes result in summary", async () => {
+    const runtime = runtimeStub();
+
+    const summary = await updateWebRuntimeCommand(
+      { nonInteractive: true },
+      runtime,
+    );
+
+    expect(workspaceSeedMocks.discoverWorkspaceDirs).toHaveBeenCalledWith("/tmp/.openclaw-dench");
+    expect(workspaceSeedMocks.syncManagedSkills).toHaveBeenCalledWith({
+      workspaceDirs: ["/tmp/.openclaw-dench/workspace"],
+      packageRoot: "/tmp/pkg",
+    });
+    expect(summary.skillSync).toEqual({
+      syncedSkills: ["crm", "browser"],
+      workspaceDirs: ["/tmp/.openclaw-dench/workspace"],
+      identityUpdated: true,
+    });
   });
 
   it("skips OpenClaw update on minor upgrades while still refreshing runtime (avoids unnecessary blocking)", async () => {

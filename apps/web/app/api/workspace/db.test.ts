@@ -89,9 +89,9 @@ describe("Workspace DB & Reports API", () => {
     });
 
     it("executes query and returns rows", async () => {
-      const { safeResolvePath, duckdbQueryOnFile } = await import("@/lib/workspace");
+      const { safeResolvePath, duckdbQueryOnFileAsync } = await import("@/lib/workspace");
       vi.mocked(safeResolvePath).mockReturnValue("/ws/test.duckdb");
-      vi.mocked(duckdbQueryOnFile).mockReturnValue([{ id: 1, name: "test" }]);
+      vi.mocked(duckdbQueryOnFileAsync).mockResolvedValue([{ id: 1, name: "test" }]);
 
       const { POST } = await import("./db/query/route.js");
       const req = new Request("http://localhost/api/workspace/db/query", {
@@ -106,9 +106,9 @@ describe("Workspace DB & Reports API", () => {
     });
 
     it("returns empty rows for empty result", async () => {
-      const { safeResolvePath, duckdbQueryOnFile } = await import("@/lib/workspace");
+      const { safeResolvePath, duckdbQueryOnFileAsync } = await import("@/lib/workspace");
       vi.mocked(safeResolvePath).mockReturnValue("/ws/test.duckdb");
-      vi.mocked(duckdbQueryOnFile).mockReturnValue([]);
+      vi.mocked(duckdbQueryOnFileAsync).mockResolvedValue([]);
 
       const { POST } = await import("./db/query/route.js");
       const req = new Request("http://localhost/api/workspace/db/query", {
@@ -190,8 +190,8 @@ describe("Workspace DB & Reports API", () => {
     it("executes report query successfully", async () => {
       const { checkSqlSafety } = await import("@/lib/report-filters");
       vi.mocked(checkSqlSafety).mockReturnValue(null);
-      const { duckdbQuery } = await import("@/lib/workspace");
-      vi.mocked(duckdbQuery).mockReturnValue([{ count: 42 }]);
+      const { duckdbQueryAsync } = await import("@/lib/workspace");
+      vi.mocked(duckdbQueryAsync).mockResolvedValue([{ count: 42 }]);
 
       const { POST } = await import("./reports/execute/route.js");
       const req = new Request("http://localhost/api/workspace/reports/execute", {
@@ -210,8 +210,8 @@ describe("Workspace DB & Reports API", () => {
       vi.mocked(checkSqlSafety).mockReturnValue(null);
       vi.mocked(buildFilterClauses).mockReturnValue(['"Status" = \'Active\'']);
       vi.mocked(injectFilters).mockReturnValue("SELECT * FROM filtered");
-      const { duckdbQuery } = await import("@/lib/workspace");
-      vi.mocked(duckdbQuery).mockReturnValue([{ count: 10 }]);
+      const { duckdbQueryAsync } = await import("@/lib/workspace");
+      vi.mocked(duckdbQueryAsync).mockResolvedValue([{ count: 10 }]);
 
       const { POST } = await import("./reports/execute/route.js");
       const req = new Request("http://localhost/api/workspace/reports/execute", {
@@ -244,8 +244,8 @@ describe("Workspace DB & Reports API", () => {
     });
 
     it("executes query and returns rows", async () => {
-      const { duckdbQuery } = await import("@/lib/workspace");
-      vi.mocked(duckdbQuery).mockReturnValue([{ id: 1 }]);
+      const { duckdbQueryAsync } = await import("@/lib/workspace");
+      vi.mocked(duckdbQueryAsync).mockResolvedValue([{ id: 1 }]);
 
       const { POST } = await import("./query/route.js");
       const req = new Request("http://localhost/api/workspace/query", {

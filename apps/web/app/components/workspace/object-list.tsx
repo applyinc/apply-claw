@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo } from "react";
+import { formatWorkspaceFieldValue } from "@/lib/workspace-cell-format";
+import { parseTagsValue } from "@/lib/parse-tags";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,6 +96,9 @@ function ListRow({
 	const enumVal = enumField ? safeString(entry[enumField.name]) : null;
 	const badge = enumField && enumVal ? getEnumBadge(enumVal, enumField) : null;
 
+	const tagsField = fields.find((f) => f.type === "tags");
+	const tagsVal = tagsField ? parseTagsValue(entry[tagsField.name]) : [];
+
 	const dateField = fields.find((f) => f.type === "date");
 	const dateVal = dateField ? safeString(entry[dateField.name]) : null;
 
@@ -127,15 +132,40 @@ function ListRow({
 							{badge.text}
 						</span>
 					)}
+					{tagsVal.slice(0, 3).map((tag) => {
+						const fmt = formatWorkspaceFieldValue(tag);
+						const isLink = fmt.kind === "link" && fmt.href;
+						return isLink ? (
+							<a
+								key={tag}
+								href={fmt.href!}
+								target={fmt.linkType === "url" || fmt.linkType === "file" ? "_blank" : undefined}
+								rel={fmt.linkType === "url" || fmt.linkType === "file" ? "noopener noreferrer" : undefined}
+								onClick={(e) => e.stopPropagation()}
+								className="text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 hover:underline underline-offset-2"
+								style={{ background: "rgba(148, 163, 184, 0.12)", color: "var(--color-accent)", border: "1px solid var(--color-border)" }}
+							>
+								{fmt.text}
+							</a>
+						) : (
+							<span
+								key={tag}
+								className="text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0"
+								style={{ background: "rgba(148, 163, 184, 0.12)", color: "var(--color-text-muted)", border: "1px solid var(--color-border)" }}
+							>
+								{tag}
+							</span>
+						);
+					})}
 				</div>
-				{subtitle && (
-					<div
-						className="text-[11px] truncate mt-0.5"
-						style={{ color: "var(--color-text-muted)" }}
-					>
-						{subtitle}
-					</div>
-				)}
+			{subtitle && (
+				<div
+					className="text-[11px] whitespace-pre-line line-clamp-1 mt-0.5"
+					style={{ color: "var(--color-text-muted)" }}
+				>
+					{subtitle}
+				</div>
+			)}
 			</div>
 
 			{/* Date on the right */}

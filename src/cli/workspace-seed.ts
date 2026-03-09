@@ -214,6 +214,71 @@ export function seedSkill(
   }
 }
 
+export type SkillSyncResult = {
+  syncedSkills: string[];
+  workspaceDirs: string[];
+  identityUpdated: boolean;
+};
+
+/**
+ * Read openclaw.json (or legacy config.json) and return all unique workspace
+ * directories referenced in `agents.list[*].workspace` and
+ * `agents.defaults.workspace`.  Falls back to `stateDir/workspace` when no
+ * config is readable.
+ */
+export function discoverWorkspaceDirs(stateDir: string): string[] {
+  const dirs = new Set<string>();
+  for (const name of ["openclaw.json", "config.json"]) {
+    const configPath = path.join(stateDir, name);
+    if (!existsSync(configPath)) {
+      continue;
+    }
+    try {
+      const raw = JSON.parse(readFileSync(configPath, "utf-8")) as {
+        agents?: {
+          defaults?: { workspace?: string };
+          list?: Array<{ workspace?: string }>;
+        };
+      };
+      const defaultWs = raw?.agents?.defaults?.workspace?.trim();
+      if (defaultWs && existsSync(defaultWs)) {
+        dirs.add(path.resolve(defaultWs));
+      }
+      for (const agent of raw?.agents?.list ?? []) {
+        const ws = agent.workspace?.trim();
+        if (ws && existsSync(ws)) {
+          dirs.add(path.resolve(ws));
+        }
+      }
+      if (dirs.size > 0) {
+        return [...dirs];
+      }
+    } catch {
+      // Config unreadable; try next candidate.
+    }
+  }
+  const fallback = path.join(stateDir, "workspace");
+  return [fallback];
+}
+
+export function syncManagedSkills(params: {
+  workspaceDirs: string[];
+  packageRoot: string;
+}): SkillSyncResult {
+  const synced: string[] = [];
+  for (const workspaceDir of params.workspaceDirs) {
+    mkdirSync(workspaceDir, { recursive: true });
+    for (const skill of MANAGED_SKILLS) {
+      seedSkill({ workspaceDir, packageRoot: params.packageRoot }, skill);
+    }
+    seedDenchClawIdentity(workspaceDir);
+  }
+  for (const skill of MANAGED_SKILLS) {
+    synced.push(skill.name);
+  }
+  return { syncedSkills: synced, workspaceDirs: params.workspaceDirs, identityUpdated: true };
+}
+
 export function writeIfMissing(filePath: string, content: string): boolean {
   if (existsSync(filePath)) {
     return false;
@@ -242,11 +307,7 @@ export function seedWorkspaceFromAssets(params: {
     ...MANAGED_SKILLS.map((s) => `skills/${s.name}/SKILL.md`),
   ];
 
-  mkdirSync(workspaceDir, { recursive: true });
-  for (const skill of MANAGED_SKILLS) {
-    seedSkill({ workspaceDir, packageRoot: params.packageRoot }, skill);
-  }
-  seedDenchClawIdentity(workspaceDir);
+  syncManagedSkills({ workspaceDirs: [workspaceDir], packageRoot: params.packageRoot });
 
   if (existsSync(dbPath)) {
     return {

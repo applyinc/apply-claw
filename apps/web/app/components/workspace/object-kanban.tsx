@@ -13,6 +13,8 @@ import {
   type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
+import { formatWorkspaceFieldValue } from "@/lib/workspace-cell-format";
+import { parseTagsValue } from "@/lib/parse-tags";
 
 type Field = {
   id: string;
@@ -187,6 +189,8 @@ function CardContent({
               displayVal = labels.join(", ");
             }
 
+            const tags = field.type === "tags" ? parseTagsValue(val) : [];
+
             return (
               <div key={field.id} className="flex items-center gap-1.5 text-xs">
                 <span style={{ color: "var(--color-text-muted)" }}>
@@ -198,6 +202,37 @@ function CardContent({
                     enumValues={field.enum_values}
                     enumColors={field.enum_colors}
                   />
+                ) : field.type === "tags" ? (
+                  <span className="flex items-center gap-0.5 flex-wrap">
+                    {tags.slice(0, 3).map((tag) => {
+                      const fmt = formatWorkspaceFieldValue(tag);
+                      const isLink = fmt.kind === "link" && fmt.href;
+                      return isLink ? (
+                        <a
+                          key={tag}
+                          href={fmt.href!}
+                          target={fmt.linkType === "url" || fmt.linkType === "file" ? "_blank" : undefined}
+                          rel={fmt.linkType === "url" || fmt.linkType === "file" ? "noopener noreferrer" : undefined}
+                          onClick={(e) => e.stopPropagation()}
+                          className="inline-flex items-center px-1.5 py-0 rounded text-[11px] font-medium hover:underline underline-offset-2"
+                          style={{ background: "rgba(148, 163, 184, 0.12)", color: "var(--color-accent)" }}
+                        >
+                          {fmt.text}
+                        </a>
+                      ) : (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center px-1.5 py-0 rounded text-[11px] font-medium"
+                          style={{ background: "rgba(148, 163, 184, 0.12)", color: "var(--color-text-muted)" }}
+                        >
+                          {tag}
+                        </span>
+                      );
+                    })}
+                    {tags.length > 3 && (
+                      <span style={{ color: "var(--color-text-muted)", opacity: 0.6 }}>+{tags.length - 3}</span>
+                    )}
+                  </span>
                 ) : field.type === "relation" ? (
                   <span
                     className="truncate inline-flex items-center gap-0.5"
@@ -222,7 +257,7 @@ function CardContent({
                   </span>
                 ) : (
                   <span
-                    className="truncate"
+                    className="whitespace-pre-line line-clamp-2"
                     style={{ color: "var(--color-text)" }}
                   >
                     {displayVal}

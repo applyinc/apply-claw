@@ -37,7 +37,7 @@ export type ChatEditorHandle = {
 
 type ChatEditorProps = {
 	/** Called when user presses Enter (without Shift). */
-	onSubmit: (text: string, mentionedFiles: Array<{ name: string; path: string }>) => void;
+	onSubmit: (text: string, mentionedFiles: Array<{ name: string; path: string }>, html: string) => void;
 	/** Called on every content change. */
 	onChange?: (isEmpty: boolean) => void;
 	/** Called when native files (e.g. from Finder/Desktop) are dropped onto the editor. */
@@ -102,39 +102,40 @@ function serializeContent(editor: ReturnType<typeof useEditor>): {
 	if (!editor) {return { text: "", mentionedFiles: [] };}
 
 	const mentionedFiles: Array<{ name: string; path: string }> = [];
-	const parts: string[] = [];
+	const lines: string[] = [];
 
-	editor.state.doc.descendants((node) => {
-		if (node.type.name === "chatFileMention") {
-			const label = node.attrs.label as string;
-			const path = node.attrs.path as string;
-			const mType = node.attrs.mentionType as string;
-			const objectName = node.attrs.objectName as string;
-
-			mentionedFiles.push({ name: label, path });
-
-			if (mType === "object") {
-				parts.push(`[object: ${label}]`);
-			} else if (mType === "entry") {
-				parts.push(`[entry: ${objectName ? `${objectName}/` : ""}${label}]`);
-			} else {
-				parts.push(`[file: ${path}]`);
-			}
-			return false;
+	editor.state.doc.forEach((node) => {
+		if (node.type.name === "paragraph" || node.type.name === "hardBreak") {
+			let lineText = "";
+			node.descendants((child) => {
+				if (child.type.name === "chatFileMention") {
+					const label = child.attrs.label as string;
+					const path = child.attrs.path as string;
+					const mType = child.attrs.mentionType as string;
+					const objectName = child.attrs.objectName as string;
+					mentionedFiles.push({ name: label, path });
+					if (mType === "object") {
+						lineText += `[object: ${label}]`;
+					} else if (mType === "entry") {
+						lineText += `[entry: ${objectName ? `${objectName}/` : ""}${label}]`;
+					} else {
+						lineText += `[file: ${path}]`;
+					}
+					return false;
+				}
+				if (child.isText && child.text) {
+					lineText += child.text;
+				}
+				if (child.type.name === "hardBreak") {
+					lineText += "\n";
+				}
+				return true;
+			});
+			lines.push(lineText);
 		}
-		if (node.isText && node.text) {
-			parts.push(node.text);
-		}
-		if (node.type.name === "paragraph" && parts.length > 0) {
-			const lastPart = parts[parts.length - 1];
-			if (lastPart !== undefined && lastPart !== "\n") {
-				parts.push("\n");
-			}
-		}
-		return true;
 	});
 
-	return { text: parts.join("").trim(), mentionedFiles };
+	return { text: lines.join("\n").trim(), mentionedFiles };
 }
 
 // ── File mention suggestion extension (wired to the async popup) ──
@@ -359,14 +360,14 @@ export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(
 
 			const handleKeyDown = (event: KeyboardEvent) => {
 				if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-					// Check if suggestion popup is active by checking if the plugin has active state
 					const suggestState = chatFileMentionPluginKey.getState(editor.state);
-					if (suggestState?.active) {return;} // Let suggestion handle it
+					if (suggestState?.active) {return;}
 
 					event.preventDefault();
 					const { text, mentionedFiles } = serializeContent(editor);
 					if (text.trim() || mentionedFiles.length > 0) {
-						submitRef.current(text, mentionedFiles);
+						const html = editor.getHTML();
+						submitRef.current(text, mentionedFiles, html);
 						editor.commands.clearContent(true);
 					}
 				}
@@ -411,7 +412,8 @@ export const ChatEditor = forwardRef<ChatEditorHandle, ChatEditorProps>(
 				if (!editor) {return;}
 				const { text, mentionedFiles } = serializeContent(editor);
 				if (text.trim() || mentionedFiles.length > 0) {
-					submitRef.current(text, mentionedFiles);
+					const html = editor.getHTML();
+					submitRef.current(text, mentionedFiles, html);
 					editor.commands.clearContent(true);
 				}
 			},

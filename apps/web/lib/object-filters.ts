@@ -266,6 +266,12 @@ const RELATION_OPS: OperatorMeta[] = [
 	...UNIVERSAL_OPS,
 ];
 
+const TAGS_OPS: OperatorMeta[] = [
+	{ value: "contains", label: "contains" },
+	{ value: "not_contains", label: "does not contain" },
+	...UNIVERSAL_OPS,
+];
+
 /**
  * Return the operators valid for a given field type.
  */
@@ -286,6 +292,8 @@ export function operatorsForFieldType(fieldType: string): OperatorMeta[] {
 		case "relation":
 		case "user":
 			return RELATION_OPS;
+		case "tags":
+			return TAGS_OPS;
 		default:
 			return TEXT_OPS;
 	}
@@ -311,6 +319,8 @@ export function defaultOperatorForFieldType(fieldType: string): FilterOperator {
 		case "relation":
 		case "user":
 			return "has_any";
+		case "tags":
+			return "contains";
 		default:
 			return "contains";
 	}

@@ -757,7 +757,7 @@ function FeedbackButtons({ messageId, sessionId }: { messageId: string; sessionI
 
 /* ─── Chat message ─── */
 
-export const ChatMessage = memo(function ChatMessage({ message, isStreaming, onSubagentClick, onFilePathClick, sessionId }: { message: UIMessage; isStreaming?: boolean; onSubagentClick?: (task: string) => void; onFilePathClick?: FilePathClickHandler; sessionId?: string | null }) {
+export const ChatMessage = memo(function ChatMessage({ message, isStreaming, onSubagentClick, onFilePathClick, sessionId, userHtmlMap }: { message: UIMessage; isStreaming?: boolean; onSubagentClick?: (task: string) => void; onFilePathClick?: FilePathClickHandler; sessionId?: string | null; userHtmlMap?: Map<string, string> }) {
 	const isUser = message.role === "user";
 	const segments = groupParts(message.parts);
 	const markdownComponents = useMemo(
@@ -766,7 +766,6 @@ export const ChatMessage = memo(function ChatMessage({ message, isStreaming, onS
 	);
 
 	if (isUser) {
-		// User: right-aligned subtle pill
 		const textContent = segments
 			.filter(
 				(s): s is { type: "text"; text: string } =>
@@ -775,16 +774,18 @@ export const ChatMessage = memo(function ChatMessage({ message, isStreaming, onS
 			.map((s) => s.text)
 			.join("\n");
 
-		// Parse attachment prefix from sent messages
 		const attachmentInfo = parseAttachments(textContent);
+		const richHtml = userHtmlMap?.get(message.id) ?? userHtmlMap?.get(textContent) ?? userHtmlMap?.get(attachmentInfo?.message ?? "");
+
+		const bubbleContent = richHtml
+			? <div className="chat-user-html-content" dangerouslySetInnerHTML={{ __html: richHtml }} />
+			: <p className="whitespace-pre-wrap break-words">{attachmentInfo?.message ?? textContent}</p>;
 
 		if (attachmentInfo) {
 			return (
 				<div className="flex flex-col items-end gap-1.5 py-2">
-					{/* Attachment previews — standalone above the text bubble */}
 					<AttachedFilesCard paths={attachmentInfo.paths} />
-					{/* Text bubble */}
-					{attachmentInfo.message && (
+					{(attachmentInfo.message || richHtml) && (
 						<div
 							className="max-w-[80%] w-fit rounded-2xl rounded-br-sm px-3 py-2 text-sm leading-6 break-words chat-message-font"
 							style={{
@@ -792,9 +793,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isStreaming, onS
 								color: "var(--color-user-bubble-text)",
 							}}
 						>
-							<p className="whitespace-pre-wrap break-words">
-								{attachmentInfo.message}
-							</p>
+							{bubbleContent}
 						</div>
 					)}
 				</div>
@@ -810,9 +809,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isStreaming, onS
 						color: "var(--color-user-bubble-text)",
 					}}
 				>
-					<p className="whitespace-pre-wrap break-words text-right">
-						{textContent}
-					</p>
+					{bubbleContent}
 				</div>
 			</div>
 		);

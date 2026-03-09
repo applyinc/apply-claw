@@ -2,7 +2,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { seedWorkspaceFromAssets } from "./workspace-seed.js";
+import {
+  discoverWorkspaceDirs,
+  MANAGED_SKILLS,
+  seedWorkspaceFromAssets,
+  syncManagedSkills,
+} from "./workspace-seed.js";
 
 function createTempDir(): string {
   const dir = path.join(
@@ -127,5 +132,162 @@ describe("seedWorkspaceFromAssets", () => {
 
     expect(result.projectionFiles).toContain("skills/crm/SKILL.md");
     expect(result.projectionFiles).toContain("IDENTITY.md");
+  });
+});
+
+describe("syncManagedSkills", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("syncs all managed skills and returns their names", () => {
+    const packageRoot = createPackageRoot(tempDir);
+    const workspaceDir = path.join(tempDir, "workspace-sync");
+
+    const result = syncManagedSkills({ workspaceDirs: [workspaceDir], packageRoot });
+
+    expect(result.syncedSkills).toEqual(MANAGED_SKILLS.map((s) => s.name));
+    expect(result.identityUpdated).toBe(true);
+    const skillPath = path.join(workspaceDir, "skills", "crm", "SKILL.md");
+    expect(existsSync(skillPath)).toBe(true);
+  });
+
+  it("updates IDENTITY.md", () => {
+    const packageRoot = createPackageRoot(tempDir);
+    const workspaceDir = path.join(tempDir, "workspace-identity");
+
+    syncManagedSkills({ workspaceDirs: [workspaceDir], packageRoot });
+
+    const identityPath = path.join(workspaceDir, "IDENTITY.md");
+    expect(existsSync(identityPath)).toBe(true);
+    expect(readFileSync(identityPath, "utf-8")).toContain("DenchClaw");
+  });
+
+  it("overwrites stale skills with updated content", () => {
+    const packageRoot = createPackageRoot(tempDir);
+    const workspaceDir = path.join(tempDir, "workspace-overwrite");
+    const skillPath = path.join(workspaceDir, "skills", "crm", "SKILL.md");
+    mkdirSync(path.dirname(skillPath), { recursive: true });
+    writeFileSync(skillPath, "# old stale skill content\n", "utf-8");
+
+    syncManagedSkills({ workspaceDirs: [workspaceDir], packageRoot });
+
+    const content = readFileSync(skillPath, "utf-8");
+    expect(content).toContain("database-crm-system");
+    expect(content).not.toContain("old stale skill content");
+  });
+
+  it("creates workspace dir if it does not exist", () => {
+    const packageRoot = createPackageRoot(tempDir);
+    const workspaceDir = path.join(tempDir, "workspace-fresh");
+
+    expect(existsSync(workspaceDir)).toBe(false);
+    syncManagedSkills({ workspaceDirs: [workspaceDir], packageRoot });
+    expect(existsSync(workspaceDir)).toBe(true);
+  });
+
+  it("syncs skills into multiple workspace directories", () => {
+    const packageRoot = createPackageRoot(tempDir);
+    const wsA = path.join(tempDir, "workspace-a");
+    const wsB = path.join(tempDir, "workspace-b");
+
+    const result = syncManagedSkills({ workspaceDirs: [wsA, wsB], packageRoot });
+
+    expect(result.workspaceDirs).toEqual([wsA, wsB]);
+    for (const ws of [wsA, wsB]) {
+      expect(existsSync(path.join(ws, "skills", "crm", "SKILL.md"))).toBe(true);
+      expect(readFileSync(path.join(ws, "IDENTITY.md"), "utf-8")).toContain("DenchClaw");
+    }
+  });
+});
+
+describe("discoverWorkspaceDirs", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("returns all workspace dirs from agents.list and agents.defaults.workspace", () => {
+    const wsDefault = path.join(tempDir, "workspace");
+    const wsUser = path.join(tempDir, "workspace-user");
+    mkdirSync(wsDefault, { recursive: true });
+    mkdirSync(wsUser, { recursive: true });
+    writeFileSync(
+      path.join(tempDir, "openclaw.json"),
+      JSON.stringify({
+        agents: {
+          defaults: { workspace: wsDefault },
+          list: [
+            { id: "main", workspace: wsDefault },
+            { id: "user", workspace: wsUser },
+          ],
+        },
+      }),
+      "utf-8",
+    );
+
+    const dirs = discoverWorkspaceDirs(tempDir);
+
+    expect(dirs).toContain(path.resolve(wsDefault));
+    expect(dirs).toContain(path.resolve(wsUser));
+    expect(dirs).toHaveLength(2);
+  });
+
+  it("deduplicates workspace dirs", () => {
+    const ws = path.join(tempDir, "workspace");
+    mkdirSync(ws, { recursive: true });
+    writeFileSync(
+      path.join(tempDir, "openclaw.json"),
+      JSON.stringify({
+        agents: {
+          defaults: { workspace: ws },
+          list: [{ id: "main", workspace: ws }],
+        },
+      }),
+      "utf-8",
+    );
+
+    const dirs = discoverWorkspaceDirs(tempDir);
+
+    expect(dirs).toHaveLength(1);
+    expect(dirs[0]).toBe(path.resolve(ws));
+  });
+
+  it("falls back to stateDir/workspace when no config exists", () => {
+    const dirs = discoverWorkspaceDirs(tempDir);
+
+    expect(dirs).toEqual([path.join(tempDir, "workspace")]);
+  });
+
+  it("skips workspace dirs that do not exist on disk", () => {
+    const wsReal = path.join(tempDir, "workspace-real");
+    mkdirSync(wsReal, { recursive: true });
+    writeFileSync(
+      path.join(tempDir, "openclaw.json"),
+      JSON.stringify({
+        agents: {
+          list: [
+            { id: "real", workspace: wsReal },
+            { id: "ghost", workspace: path.join(tempDir, "workspace-ghost") },
+          ],
+        },
+      }),
+      "utf-8",
+    );
+
+    const dirs = discoverWorkspaceDirs(tempDir);
+
+    expect(dirs).toEqual([path.resolve(wsReal)]);
   });
 });

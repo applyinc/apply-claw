@@ -9,6 +9,15 @@ vi.mock("node:fs", () => ({
   statSync: vi.fn(() => ({ isDirectory: () => false, size: 100 })),
 }));
 
+vi.mock("node:fs/promises", () => ({
+  readdir: vi.fn(async () => []),
+  readFile: vi.fn(async () => ""),
+  access: vi.fn(async () => {
+    throw new Error("ENOENT");
+  }),
+  stat: vi.fn(async () => ({ isDirectory: () => false, isFile: () => false })),
+}));
+
 // Mock node:os
 vi.mock("node:os", () => ({
   homedir: vi.fn(() => "/home/testuser"),
@@ -52,6 +61,14 @@ describe("Workspace Tree & Browse API", () => {
       existsSync: vi.fn(() => false),
       statSync: vi.fn(() => ({ isDirectory: () => false, size: 100 })),
     }));
+    vi.mock("node:fs/promises", () => ({
+      readdir: vi.fn(async () => []),
+      readFile: vi.fn(async () => ""),
+      access: vi.fn(async () => {
+        throw new Error("ENOENT");
+      }),
+      stat: vi.fn(async () => ({ isDirectory: () => false, isFile: () => false })),
+    }));
     vi.mock("node:os", () => ({
       homedir: vi.fn(() => "/home/testuser"),
     }));
@@ -90,16 +107,15 @@ describe("Workspace Tree & Browse API", () => {
       const { resolveWorkspaceRoot, getActiveWorkspaceName } = await import("@/lib/workspace");
       vi.mocked(resolveWorkspaceRoot).mockReturnValue("/ws");
       vi.mocked(getActiveWorkspaceName).mockReturnValue("default");
-      const { readdirSync: mockReaddir, existsSync: mockExists } = await import("node:fs");
-      vi.mocked(mockExists).mockReturnValue(true);
+      const { readdir: mockReaddir } = await import("node:fs/promises");
       vi.mocked(mockReaddir).mockImplementation((dir) => {
         if (String(dir) === "/ws") {
-          return [
+          return Promise.resolve([
             makeDirent("knowledge", true),
             makeDirent("readme.md", false),
-          ] as unknown as Dirent[];
+          ] as unknown as Dirent[]);
         }
-        return [] as unknown as Dirent[];
+        return Promise.resolve([] as unknown as Dirent[]);
       });
 
       const { GET } = await import("./tree/route.js");
@@ -114,8 +130,6 @@ describe("Workspace Tree & Browse API", () => {
     it("includes workspaceRoot in response", async () => {
       const { resolveWorkspaceRoot } = await import("@/lib/workspace");
       vi.mocked(resolveWorkspaceRoot).mockReturnValue("/ws");
-      const { existsSync: mockExists } = await import("node:fs");
-      vi.mocked(mockExists).mockReturnValue(true);
 
       const { GET } = await import("./tree/route.js");
       const req = new Request("http://localhost/api/workspace/tree");
@@ -127,16 +141,15 @@ describe("Workspace Tree & Browse API", () => {
     it("includes root IDENTITY.md in the workspace tree", async () => {
       const { resolveWorkspaceRoot } = await import("@/lib/workspace");
       vi.mocked(resolveWorkspaceRoot).mockReturnValue("/ws");
-      const { readdirSync: mockReaddir, existsSync: mockExists } = await import("node:fs");
-      vi.mocked(mockExists).mockImplementation((p) => String(p) === "/ws");
+      const { readdir: mockReaddir } = await import("node:fs/promises");
       vi.mocked(mockReaddir).mockImplementation((dir) => {
         if (String(dir) === "/ws") {
-          return [
+          return Promise.resolve([
             makeDirent("IDENTITY.md", false),
             makeDirent("notes.md", false),
-          ] as unknown as Dirent[];
+          ] as unknown as Dirent[]);
         }
-        return [] as unknown as Dirent[];
+        return Promise.resolve([] as unknown as Dirent[]);
       });
 
       const { GET } = await import("./tree/route.js");
@@ -151,27 +164,30 @@ describe("Workspace Tree & Browse API", () => {
     it("omits managed crm skill from the virtual skills folder", async () => {
       const { resolveWorkspaceRoot } = await import("@/lib/workspace");
       vi.mocked(resolveWorkspaceRoot).mockReturnValue("/ws");
-      const { readdirSync: mockReaddir, existsSync: mockExists } = await import("node:fs");
-      vi.mocked(mockExists).mockImplementation((p) => {
+      const { readdir: mockReaddir, access: mockAccess } = await import("node:fs/promises");
+      vi.mocked(mockAccess).mockImplementation(async (p) => {
         const value = String(p);
-        return (
+        if (
           value === "/ws" ||
           value === "/ws/skills" ||
           value === "/ws/skills/alpha/SKILL.md" ||
           value === "/ws/skills/crm/SKILL.md"
-        );
+        ) {
+          return;
+        }
+        throw new Error("ENOENT");
       });
       vi.mocked(mockReaddir).mockImplementation((dir) => {
         if (String(dir) === "/ws") {
-          return [] as unknown as Dirent[];
+          return Promise.resolve([] as unknown as Dirent[]);
         }
         if (String(dir) === "/ws/skills") {
-          return [
+          return Promise.resolve([
             makeDirent("alpha", true),
             makeDirent("crm", true),
-          ] as unknown as Dirent[];
+          ] as unknown as Dirent[]);
         }
-        return [] as unknown as Dirent[];
+        return Promise.resolve([] as unknown as Dirent[]);
       });
 
       const { GET } = await import("./tree/route.js");
@@ -184,6 +200,41 @@ describe("Workspace Tree & Browse API", () => {
       const skillPaths = (skillsFolder?.children ?? []).map((child) => child.path);
       expect(skillPaths).toContain("~skills/alpha/SKILL.md");
       expect(skillPaths).not.toContain("~skills/crm/SKILL.md");
+    });
+
+    it("yields before tree discovery completes (prevents UI freeze during active agent runs)", async () => {
+      const { resolveWorkspaceRoot, duckdbQueryAll, duckdbQueryAllAsync } = await import("@/lib/workspace");
+      vi.mocked(resolveWorkspaceRoot).mockReturnValue("/ws");
+      vi.mocked(duckdbQueryAll).mockImplementation(() => {
+        const start = Date.now();
+        while (Date.now() - start < 75) {
+          // busy wait: if the route ever regresses to the sync helper,
+          // this test should fail on the elapsed-time assertion below.
+        }
+        return [];
+      });
+
+      let releaseDuckdb: (rows: Array<{ name: string }>) => void;
+      const duckdbGate = new Promise<Array<{ name: string }>>((resolve) => {
+        releaseDuckdb = resolve;
+      });
+      vi.mocked(duckdbQueryAllAsync).mockReturnValue(duckdbGate);
+
+      const { readdir: mockReaddir } = await import("node:fs/promises");
+      vi.mocked(mockReaddir).mockResolvedValue([] as unknown as Dirent[]);
+
+      const { GET } = await import("./tree/route.js");
+      const req = new Request("http://localhost/api/workspace/tree");
+
+      const startedAt = Date.now();
+      const responsePromise = GET(req);
+      const elapsedMs = Date.now() - startedAt;
+
+      expect(elapsedMs).toBeLessThan(40);
+
+      releaseDuckdb!([]);
+      const res = await responsePromise;
+      expect(res.status).toBe(200);
     });
   });
 

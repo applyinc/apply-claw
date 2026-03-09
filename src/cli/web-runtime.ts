@@ -637,6 +637,35 @@ function resolveSymlinkedPackage(
 }
 
 /**
+ * Copy assets/seed/ and skills/ into the runtime app dir so the web init
+ * route can locate them via resolveProjectRoot() (which walks up from
+ * process.cwd looking for package.json + assets/seed/workspace.duckdb).
+ * Without these, creating a new workspace in the web UI silently skips
+ * seeding objects (people, company, task), the DuckDB, and managed skills.
+ */
+function ensureSeedAssets(runtimeAppDir: string, packageRoot: string): void {
+  const pairs: Array<[src: string, dst: string]> = [
+    [
+      path.join(packageRoot, "assets", "seed"),
+      path.join(runtimeAppDir, "assets", "seed"),
+    ],
+    [
+      path.join(packageRoot, "skills"),
+      path.join(runtimeAppDir, "skills"),
+    ],
+  ];
+  for (const [src, dst] of pairs) {
+    if (!existsSync(src)) continue;
+    try {
+      mkdirSync(path.dirname(dst), { recursive: true });
+      cpSync(src, dst, { recursive: true, dereference: true, force: true });
+    } catch {
+      // best-effort
+    }
+  }
+}
+
+/**
  * Copy .next/static/ and public/ into the runtime app dir if they aren't
  * already present.  In production the prepack script copies these into the
  * standalone app dir before publish, so cpSync already picks them up.
@@ -695,6 +724,7 @@ export function installManagedWebRuntime(params: {
 
   dereferenceRuntimeNodeModules(runtimeAppDir, standaloneDir);
   ensureStaticAssets(runtimeAppDir, params.packageRoot);
+  ensureSeedAssets(runtimeAppDir, params.packageRoot);
 
   const manifest: ManagedWebRuntimeManifest = {
     schemaVersion: 1,

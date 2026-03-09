@@ -5,6 +5,8 @@ import { type ColumnDef, type CellContext } from "@tanstack/react-table";
 import { DataTable, type RowAction } from "./data-table";
 import { RelationSelect } from "./relation-select";
 import { FormattedFieldValue } from "./formatted-field-value";
+import { formatWorkspaceFieldValue } from "@/lib/workspace-cell-format";
+import { parseTagsValue } from "@/lib/parse-tags";
 
 /* ─── Types ─── */
 
@@ -190,6 +192,117 @@ function RelationCell({
 	);
 }
 
+function TagChip({ tag }: { tag: string }) {
+	const formatted = formatWorkspaceFieldValue(tag);
+	const isLink = formatted.kind === "link" && formatted.href;
+	const chipStyle = { background: "rgba(148, 163, 184, 0.12)", border: "1px solid var(--color-border)" };
+	if (isLink) {
+		return (
+			<a
+				href={formatted.href!}
+				target={formatted.linkType === "url" || formatted.linkType === "file" ? "_blank" : undefined}
+				rel={formatted.linkType === "url" || formatted.linkType === "file" ? "noopener noreferrer" : undefined}
+				onClick={(e) => e.stopPropagation()}
+				className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium underline-offset-2 hover:underline"
+				style={{ ...chipStyle, color: "var(--color-accent)" }}
+			>
+				{formatted.text}
+			</a>
+		);
+	}
+	return (
+		<span
+			className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+			style={{ ...chipStyle, color: "var(--color-text-muted)" }}
+		>
+			{tag}
+		</span>
+	);
+}
+
+function TagsCell({ value }: { value: unknown }) {
+	const tags = parseTagsValue(value);
+	if (tags.length === 0) {return <span style={{ color: "var(--color-text-muted)", opacity: 0.5 }}>--</span>;}
+	return (
+		<span className="flex items-center gap-1 flex-wrap">
+			{tags.slice(0, 5).map((tag) => <TagChip key={tag} tag={tag} />)}
+			{tags.length > 5 && <span className="text-xs" style={{ color: "var(--color-text-muted)" }}>+{tags.length - 5}</span>}
+		</span>
+	);
+}
+
+function TagsInput({
+	value,
+	onChange,
+	autoFocus,
+}: {
+	value: string;
+	onChange: (val: string) => void;
+	autoFocus?: boolean;
+}) {
+	const tags = parseTagsValue(value);
+	const [inputVal, setInputVal] = useState("");
+	const inputRef = useRef<HTMLInputElement>(null);
+
+	useEffect(() => {
+		if (autoFocus && inputRef.current) {inputRef.current.focus();}
+	}, [autoFocus]);
+
+	const addTag = (tag: string) => {
+		const t = tag.trim();
+		if (!t || tags.includes(t)) {return;}
+		const next = [...tags, t];
+		onChange(JSON.stringify(next));
+		setInputVal("");
+	};
+
+	const removeTag = (tag: string) => {
+		const next = tags.filter((t) => t !== tag);
+		onChange(next.length > 0 ? JSON.stringify(next) : "");
+	};
+
+	return (
+		<div className="flex items-center gap-1 flex-wrap min-h-[1.5em]">
+			{tags.map((tag) => (
+				<span
+					key={tag}
+					className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-xs font-medium"
+					style={{ background: "rgba(148, 163, 184, 0.12)", color: "var(--color-text-muted)", border: "1px solid var(--color-border)" }}
+				>
+					{tag}
+					<button
+						type="button"
+						onClick={() => removeTag(tag)}
+						className="ml-0.5 hover:opacity-70"
+						style={{ color: "var(--color-text-muted)" }}
+					>
+						<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+					</button>
+				</span>
+			))}
+			<input
+				ref={inputRef}
+				type="text"
+				value={inputVal}
+				onChange={(e) => setInputVal(e.target.value)}
+				onKeyDown={(e) => {
+					if ((e.key === "Enter" || e.key === ",") && inputVal.trim()) {
+						e.preventDefault();
+						addTag(inputVal);
+					}
+					if (e.key === "Backspace" && !inputVal && tags.length > 0) {
+						removeTag(tags[tags.length - 1]);
+					}
+				}}
+				onBlur={() => { if (inputVal.trim()) {addTag(inputVal);} }}
+				placeholder={tags.length === 0 ? "Type and press Enter..." : ""}
+				className="flex-1 min-w-[80px] text-xs outline-none bg-transparent"
+				style={{ color: "var(--color-text)" }}
+			/>
+		</div>
+	);
+}
+
 function ReverseRelationCell({ links, sourceObjectName, onNavigateObject, onNavigateEntry }: {
 	links: Array<{ id: string; label: string }>;
 	sourceObjectName: string;
@@ -269,6 +382,7 @@ function EditableCell({
 	// Non-editable types: render read-only (relations are now editable via dropdown)
 	const isEditable = !["user"].includes(field.type);
 	const isRelation = field.type === "relation" && !!field.related_object_name;
+	const isTags = field.type === "tags";
 
 	const save = useCallback(async (val: string) => {
 		onLocalValueChange?.(val);
@@ -322,6 +436,23 @@ function EditableCell({
 						multiple={field.relationship_type === "many_to_many"}
 						onChange={(v) => { void save(v); setEditing(false); }}
 						variant="inline"
+						autoFocus
+					/>
+				</div>
+			);
+		}
+		if (isTags) {
+			return (
+				<div
+					className="-mx-3 -my-2 px-3 py-2"
+					style={{
+						background: "var(--color-bg)",
+						boxShadow: "inset 0 0 0 2px var(--color-accent)",
+					}}
+				>
+					<TagsInput
+						value={safeString(initialValue)}
+						onChange={(v) => { void save(v); }}
 						autoFocus
 					/>
 				</div>
@@ -404,6 +535,19 @@ function EditableCell({
 					onNavigateObject={onNavigateObject}
 					onNavigateEntry={onNavigateEntry}
 				/>
+			</div>
+		);
+	}
+
+	// Tags fields: show tag chips with double-click to edit
+	if (isTags) {
+		return (
+			<div
+				onDoubleClick={() => setEditing(true)}
+				className="cursor-cell min-h-[1.5em]"
+				title="Double-click to edit"
+			>
+				<TagsCell value={displayValue} />
 			</div>
 		);
 	}
@@ -527,7 +671,7 @@ export function ObjectTable({
 					/>
 				);
 			},
-			size: field.type === "richtext" ? 300 : field.type === "relation" ? 200 : 180,
+			size: field.type === "richtext" ? 300 : field.type === "relation" || field.type === "tags" ? 200 : 180,
 			enableSorting: true,
 		}));
 
@@ -835,23 +979,36 @@ function AddEntryModal({
 									)}
 								</label>
 
-								{field.type === "enum" && field.enum_values ? (
-									<select
+							{field.type === "tags" ? (
+								<div
+									className="w-full px-3 py-2 text-sm rounded-lg"
+									style={{
+										background: "var(--color-surface)",
+										border: "1px solid var(--color-border)",
+									}}
+								>
+									<TagsInput
 										value={values[field.name] ?? ""}
-										onChange={(e) => updateField(field.name, e.target.value)}
-										className="w-full px-3 py-2 text-sm rounded-lg outline-none"
-										style={{
-											background: "var(--color-surface)",
-											color: "var(--color-text)",
-											border: "1px solid var(--color-border)",
-										}}
-									>
-										<option value="">-- Select --</option>
-										{field.enum_values.map((v) => (
-											<option key={v} value={v}>{v}</option>
-										))}
-									</select>
-								) : field.type === "boolean" ? (
+										onChange={(v) => updateField(field.name, v)}
+									/>
+								</div>
+							) : field.type === "enum" && field.enum_values ? (
+								<select
+									value={values[field.name] ?? ""}
+									onChange={(e) => updateField(field.name, e.target.value)}
+									className="w-full px-3 py-2 text-sm rounded-lg outline-none"
+									style={{
+										background: "var(--color-surface)",
+										color: "var(--color-text)",
+										border: "1px solid var(--color-border)",
+									}}
+								>
+									<option value="">-- Select --</option>
+									{field.enum_values.map((v) => (
+										<option key={v} value={v}>{v}</option>
+									))}
+								</select>
+							) : field.type === "boolean" ? (
 									<select
 										value={values[field.name] ?? ""}
 										onChange={(e) => updateField(field.name, e.target.value)}

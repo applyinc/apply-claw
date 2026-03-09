@@ -16,6 +16,12 @@ import {
 	existsSync,
 	mkdirSync,
 } from "node:fs";
+import {
+	access,
+	mkdir,
+	readFile,
+	writeFile,
+} from "node:fs/promises";
 import { resolveWebChatDir, resolveOpenClawStateDir, resolveActiveAgentId } from "./workspace";
 import {
 	type AgentProcessHandle,
@@ -193,6 +199,34 @@ const activeRuns: Map<string, ActiveRun> =
 
 (globalThis as Record<string, unknown>)[GLOBAL_KEY] = activeRuns;
 
+const fileMutationQueues = new Map<string, Promise<void>>();
+
+async function pathExistsAsync(path: string): Promise<boolean> {
+	try {
+		await access(path);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function queueFileMutation<T>(
+	filePath: string,
+	mutate: () => Promise<T>,
+): Promise<T> {
+	const previous = fileMutationQueues.get(filePath) ?? Promise.resolve();
+	const next = previous.catch(() => {}).then(mutate);
+	const settled = next.then(() => undefined, () => undefined);
+	fileMutationQueues.set(filePath, settled);
+	try {
+		return await next;
+	} finally {
+		if (fileMutationQueues.get(filePath) === settled) {
+			fileMutationQueues.delete(filePath);
+		}
+	}
+}
+
 // ── Public API ──
 
 /** Retrieve an active or recently-completed run (within the grace period). */
@@ -217,18 +251,25 @@ export function getRunningSessionIds(): string[] {
 	return ids;
 }
 
-/** Check if any subagent sessions are still running for a parent web session. */
-export function hasRunningSubagentsForParent(parentWebSessionId: string): boolean {
+function hasRunningSubagentsInMemory(parentWebSessionId: string): boolean {
 	for (const [_key, run] of activeRuns) {
 		if (run.isSubscribeOnly && run.parentSessionId === parentWebSessionId && run.status === "running") {
 			return true;
 		}
 	}
+	return false;
+}
+
+/** Check if any subagent sessions are still running for a parent web session. */
+export async function hasRunningSubagentsForParent(parentWebSessionId: string): Promise<boolean> {
+	if (hasRunningSubagentsInMemory(parentWebSessionId)) {
+		return true;
+	}
 	// Fallback: check the gateway disk registry
 	const registryPath = join(resolveOpenClawStateDir(), "subagents", "runs.json");
-	if (!existsSync(registryPath)) {return false;}
+	if (!await pathExistsAsync(registryPath)) {return false;}
 	try {
-		const raw = JSON.parse(readFileSync(registryPath, "utf-8")) as {
+		const raw = JSON.parse(await readFile(registryPath, "utf-8")) as {
 			runs?: Record<string, Record<string, unknown>>;
 		};
 		const runs = raw?.runs;
@@ -271,7 +312,14 @@ export function subscribeToRun(
 	}
 
 	// If the run already finished, signal completion immediately.
+	// Always replay buffered events for errored runs so error messages
+	// are never silently dropped due to replay:false timing.
 	if (run.status !== "running" && run.status !== "waiting-for-subagents") {
+		if (!replay && run.status === "error") {
+			for (const event of run.eventBuffer) {
+				callback(event);
+			}
+		}
 		callback(null);
 		return () => {};
 	}
@@ -348,10 +396,10 @@ export function sendSubagentFollowUp(sessionKey: string, message: string): boole
  * Emits a user-message event so reconnecting clients see the message,
  * and writes the message to the session JSONL file on disk.
  */
-export function persistSubscribeUserMessage(
+export async function persistSubscribeUserMessage(
 	sessionKey: string,
 	msg: { id?: string; text: string },
-): boolean {
+): Promise<boolean> {
 	const run = activeRuns.get(sessionKey);
 	if (!run) {return false;}
 	const msgId = msg.id ?? `user-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -368,15 +416,18 @@ export function persistSubscribeUserMessage(
 	// Write the user message to the session JSONL (same as persistUserMessage
 	// does for parent sessions) so it survives page reloads.
 	try {
-		ensureDir();
 		const fp = join(webChatDir(), `${sessionKey}.jsonl`);
-		if (!existsSync(fp)) {writeFileSync(fp, "");}
-		const content = readFileSync(fp, "utf-8");
-		const lines = content.split("\n").filter((l) => l.trim());
-		const alreadySaved = lines.some((l) => {
-			try { return JSON.parse(l).id === msgId; } catch { return false; }
-		});
-		if (!alreadySaved) {
+		await ensureDir();
+		await queueFileMutation(fp, async () => {
+			if (!await pathExistsAsync(fp)) {await writeFile(fp, "");}
+			const content = await readFile(fp, "utf-8");
+			const lines = content.split("\n").filter((l) => l.trim());
+			const alreadySaved = lines.some((l) => {
+				try { return JSON.parse(l).id === msgId; } catch { return false; }
+			});
+			if (alreadySaved) {
+				return;
+			}
 			const line = JSON.stringify({
 				id: msgId,
 				role: "user",
@@ -384,8 +435,8 @@ export function persistSubscribeUserMessage(
 				parts: [{ type: "text", text: msg.text }],
 				timestamp: new Date().toISOString(),
 			});
-			writeFileSync(fp, [...lines, line].join("\n") + "\n");
-		}
+			await writeFile(fp, [...lines, line].join("\n") + "\n");
+		});
 	} catch { /* best effort */ }
 
 	schedulePersist(run);
@@ -416,7 +467,7 @@ export function abortRun(sessionId: string): boolean {
 	sendGatewayAbort(sessionId);
 
 	// Flush persistence to save the partial response (without _streaming).
-	flushPersistence(run);
+	flushPersistence(run).catch(() => {});
 
 	// Signal subscribers that the stream ended.
 	for (const sub of run.subscribers) {
@@ -550,7 +601,12 @@ export function startSubscribeRun(params: {
 	// The subscribe process also patches, but this gives us a head start.
 	void callGatewayRpc(
 		"sessions.patch",
-		{ key: sessionKey, verboseLevel: "full", reasoningLevel: "on" },
+		{
+			key: sessionKey,
+			thinkingLevel: "xhigh",
+			verboseLevel: "full",
+			reasoningLevel: "on",
+		},
 		{ timeoutMs: 4_000 },
 	).catch(() => {});
 
@@ -892,9 +948,12 @@ function wireSubscribeOnlyProcess(
 					}
 				}
 			}
-			if (typeof ev.data?.stopReason === "string" && ev.data.stopReason === "error" && typeof ev.data?.errorMessage === "string" && !agentErrorReported) {
+			if (typeof ev.data?.stopReason === "string" && ev.data.stopReason === "error" && !agentErrorReported) {
 				agentErrorReported = true;
-				emitError(parseErrorBody(ev.data.errorMessage));
+				const errMsg = typeof ev.data?.errorMessage === "string"
+					? parseErrorBody(ev.data.errorMessage)
+					: (parseAgentErrorMessage(ev.data) ?? "Agent stopped with an error");
+				emitError(errMsg);
 			}
 		}
 
@@ -1001,14 +1060,14 @@ function wireSubscribeOnlyProcess(
 		}
 
 		if (ev.event === "agent" && ev.stream === "lifecycle" && ev.data?.phase === "error" && !agentErrorReported) {
-			const msg = parseAgentErrorMessage(ev.data);
-			if (msg) { agentErrorReported = true; emitError(msg); }
+			agentErrorReported = true;
+			emitError(parseAgentErrorMessage(ev.data) ?? "Agent encountered an error");
 			finalizeSubscribeRun(run, "error");
 		}
 
 		if (ev.event === "error" && !agentErrorReported) {
-			const msg = parseAgentErrorMessage(ev.data ?? (ev as unknown as Record<string, unknown>));
-			if (msg) { agentErrorReported = true; emitError(msg); }
+			agentErrorReported = true;
+			emitError(parseAgentErrorMessage(ev.data ?? (ev as unknown as Record<string, unknown>)) ?? "An unknown error occurred");
 		}
 	};
 
@@ -1071,7 +1130,7 @@ function finalizeSubscribeRun(run: ActiveRun, status: "completed" | "error" = "c
 	resetSubscribeRetryState(run);
 
 	run.status = status;
-	flushPersistence(run);
+	flushPersistence(run).catch(() => {});
 
 	for (const sub of run.subscribers) {
 		try { sub(null); } catch { /* ignore */ }
@@ -1210,90 +1269,98 @@ export function enrichSubagentSessionFromTranscript(sessionKey: string): void {
 // ── Persistence helpers (called from route to persist user messages) ──
 
 /** Save a user message to the session JSONL (called once at run start). */
-export function persistUserMessage(
+export async function persistUserMessage(
 	sessionId: string,
-	msg: { id: string; content: string; parts?: unknown[] },
-): void {
-	ensureDir();
+	msg: { id: string; content: string; parts?: unknown[]; html?: string },
+): Promise<void> {
+	await ensureDir();
 	const filePath = join(webChatDir(), `${sessionId}.jsonl`);
-	if (!existsSync(filePath)) {writeFileSync(filePath, "");}
 
 	const line = JSON.stringify({
 		id: msg.id,
 		role: "user",
 		content: msg.content,
 		...(msg.parts ? { parts: msg.parts } : {}),
+		...(msg.html ? { html: msg.html } : {}),
 		timestamp: new Date().toISOString(),
 	});
 
-	// Avoid duplicates (e.g. retry).
-	const existing = readFileSync(filePath, "utf-8");
-	const lines = existing.split("\n").filter((l) => l.trim());
-	const alreadySaved = lines.some((l) => {
-		try {
-			return JSON.parse(l).id === msg.id;
-		} catch {
-			return false;
+	let alreadySaved = false;
+	await queueFileMutation(filePath, async () => {
+		if (!await pathExistsAsync(filePath)) {await writeFile(filePath, "");}
+
+		// Avoid duplicates (e.g. retry).
+		const existing = await readFile(filePath, "utf-8");
+		const lines = existing.split("\n").filter((l) => l.trim());
+		alreadySaved = lines.some((l) => {
+			try {
+				return JSON.parse(l).id === msg.id;
+			} catch {
+				return false;
+			}
+		});
+
+		if (!alreadySaved) {
+			await writeFile(filePath, [...lines, line].join("\n") + "\n");
 		}
 	});
 
 	if (!alreadySaved) {
-		writeFileSync(filePath, [...lines, line].join("\n") + "\n");
-		updateIndex(sessionId, { incrementCount: 1 });
+		await updateIndex(sessionId, { incrementCount: 1 });
 	}
 }
 
 // ── Internals ──
 
-function ensureDir() {
-	const dir = webChatDir();
-	if (!existsSync(dir)) {
-		mkdirSync(dir, { recursive: true });
-	}
+async function ensureDir() {
+	await mkdir(webChatDir(), { recursive: true });
 }
 
-function updateIndex(
+async function updateIndex(
 	sessionId: string,
 	opts: { incrementCount?: number; title?: string },
 ) {
 	try {
 		const idxPath = indexFile();
-		let index: Array<Record<string, unknown>>;
-		if (!existsSync(idxPath)) {
-			// Auto-create index with a bootstrap entry for this session so
-			// orphaned .jsonl files become visible in the sidebar.
-			index = [{
-				id: sessionId,
-				title: opts.title || "New Chat",
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-				messageCount: opts.incrementCount || 0,
-			}];
-			writeFileSync(idxPath, JSON.stringify(index, null, 2));
-			return;
-		}
-		index = JSON.parse(
-			readFileSync(idxPath, "utf-8"),
-		) as Array<Record<string, unknown>>;
-		let session = index.find((s) => s.id === sessionId);
-		if (!session) {
-			// Session file exists but wasn't indexed — add it.
-			session = {
-				id: sessionId,
-				title: opts.title || "New Chat",
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-				messageCount: 0,
-			};
-			index.unshift(session);
-		}
-		session.updatedAt = Date.now();
-		if (opts.incrementCount) {
-			session.messageCount =
-				((session.messageCount as number) || 0) + opts.incrementCount;
-		}
-		if (opts.title) {session.title = opts.title;}
-		writeFileSync(idxPath, JSON.stringify(index, null, 2));
+		await ensureDir();
+		await queueFileMutation(idxPath, async () => {
+			let index: Array<Record<string, unknown>>;
+			if (!await pathExistsAsync(idxPath)) {
+				// Auto-create index with a bootstrap entry for this session so
+				// orphaned .jsonl files become visible in the sidebar.
+				index = [{
+					id: sessionId,
+					title: opts.title || "New Chat",
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+					messageCount: opts.incrementCount || 0,
+				}];
+				await writeFile(idxPath, JSON.stringify(index, null, 2));
+				return;
+			}
+			index = JSON.parse(
+				await readFile(idxPath, "utf-8"),
+			) as Array<Record<string, unknown>>;
+			let session = index.find((s) => s.id === sessionId);
+			if (!session) {
+				// Session file exists but wasn't indexed — add it.
+				session = {
+					id: sessionId,
+					title: opts.title || "New Chat",
+					createdAt: Date.now(),
+					updatedAt: Date.now(),
+					messageCount: 0,
+				};
+				index.unshift(session);
+			}
+			session.updatedAt = Date.now();
+			if (opts.incrementCount) {
+				session.messageCount =
+					((session.messageCount as number) || 0) + opts.incrementCount;
+			}
+			if (opts.title) {session.title = opts.title;}
+			await writeFile(idxPath, JSON.stringify(index, null, 2));
+		});
 	} catch {
 		/* best-effort */
 	}
@@ -1534,11 +1601,13 @@ function wireChildProcess(run: ActiveRun): void {
 			if (
 				typeof ev.data?.stopReason === "string" &&
 				ev.data.stopReason === "error" &&
-				typeof ev.data?.errorMessage === "string" &&
 				!agentErrorReported
 			) {
 				agentErrorReported = true;
-				emitError(parseErrorBody(ev.data.errorMessage));
+				const errMsg = typeof ev.data?.errorMessage === "string"
+					? parseErrorBody(ev.data.errorMessage)
+					: (parseAgentErrorMessage(ev.data) ?? "Agent stopped with an error");
+				emitError(errMsg);
 			}
 		}
 
@@ -1709,23 +1778,19 @@ function wireChildProcess(run: ActiveRun): void {
 			ev.data?.phase === "error" &&
 			!agentErrorReported
 		) {
-			const msg = parseAgentErrorMessage(ev.data);
-			if (msg) {
-				agentErrorReported = true;
-				emitError(msg);
-			}
+			agentErrorReported = true;
+			emitError(parseAgentErrorMessage(ev.data) ?? "Agent encountered an error");
 		}
 
 		// Top-level error event
 		if (ev.event === "error" && !agentErrorReported) {
-			const msg = parseAgentErrorMessage(
-				ev.data ??
-					(ev as unknown as Record<string, unknown>),
+			agentErrorReported = true;
+			emitError(
+				parseAgentErrorMessage(
+					ev.data ??
+						(ev as unknown as Record<string, unknown>),
+				) ?? "An unknown error occurred",
 			);
-			if (msg) {
-				agentErrorReported = true;
-				emitError(msg);
-			}
 		}
 	};
 
@@ -1743,22 +1808,34 @@ function wireChildProcess(run: ActiveRun): void {
 				openStatusReasoning("Waiting for subagent results...");
 				waitingStatusAnnounced = true;
 			}
-			flushPersistence(run);
+			flushPersistence(run).catch(() => {});
 		};
 
 		const scheduleWaitingCompletionCheck = () => {
 			clearWaitingFinalizeTimer(run);
-			run._waitingFinalizeTimer = setTimeout(() => {
+			run._waitingFinalizeTimer = setTimeout(async () => {
 				run._waitingFinalizeTimer = null;
 				if (run.status !== "waiting-for-subagents") {
 					return;
 				}
-				if (hasRunningSubagentsForParent(run.sessionId)) {
+				if (await hasRunningSubagentsForParent(run.sessionId)) {
 					showWaitingStatus();
 					return;
 				}
 				finalizeWaitingRun(run);
 			}, WAITING_FINALIZE_RECONCILE_MS);
+		};
+
+		const reconcileWaitingState = () => {
+			if (run.status !== "waiting-for-subagents" && run.status !== "running") {
+				return;
+			}
+			if (hasRunningSubagentsInMemory(run.sessionId)) {
+				clearWaitingFinalizeTimer(run);
+				showWaitingStatus();
+				return;
+			}
+			scheduleWaitingCompletionCheck();
 		};
 
 		// Any new parent event means waiting completion should be reconsidered
@@ -1767,12 +1844,7 @@ function wireChildProcess(run: ActiveRun): void {
 
 		processParentEvent(ev);
 		if (ev.stream === "lifecycle" && ev.data?.phase === "end") {
-			if (hasRunningSubagentsForParent(run.sessionId)) {
-				clearWaitingFinalizeTimer(run);
-				showWaitingStatus();
-			} else {
-				scheduleWaitingCompletionCheck();
-			}
+			reconcileWaitingState();
 		}
 		if (ev.event === "chat") {
 			const payload = ev.data;
@@ -1780,12 +1852,7 @@ function wireChildProcess(run: ActiveRun): void {
 			const message = asRecord(payload?.message);
 			const role = typeof message?.role === "string" ? message.role : "";
 			if (state === "final" && role === "assistant") {
-				if (hasRunningSubagentsForParent(run.sessionId)) {
-					clearWaitingFinalizeTimer(run);
-					showWaitingStatus();
-				} else {
-					scheduleWaitingCompletionCheck();
-				}
+				reconcileWaitingState();
 			}
 		}
 	};
@@ -1847,19 +1914,14 @@ function wireChildProcess(run: ActiveRun): void {
 			emit({ type: "text-end", id: tid });
 			accAppendText(errMsg);
 		} else if (!everSentText && exitedClean) {
-			const tid = nextId("text");
-			emit({ type: "text-start", id: tid });
-			const msg = "No response from agent.";
-			emit({ type: "text-delta", id: tid, delta: msg });
-			emit({ type: "text-end", id: tid });
-			accAppendText(msg);
+			emitError("No response from agent.");
 		} else {
 			closeText();
 		}
 
 		run.exitCode = code;
 
-		const hasRunningSubagents = hasRunningSubagentsForParent(run.sessionId);
+		const hasRunningSubagents = hasRunningSubagentsInMemory(run.sessionId);
 
 		// If the CLI exited cleanly and subagents are still running,
 		// keep the SSE stream open and wait for announcement-triggered
@@ -1871,7 +1933,7 @@ function wireChildProcess(run: ActiveRun): void {
 				openStatusReasoning("Waiting for subagent results...");
 				waitingStatusAnnounced = true;
 			}
-			flushPersistence(run);
+			flushPersistence(run).catch(() => {});
 			startParentSubscribeStream(run, parentSessionKey, processParentSubscribeEvent);
 			return;
 		}
@@ -1880,7 +1942,7 @@ function wireChildProcess(run: ActiveRun): void {
 		run.status = exitedClean ? "completed" : "error";
 
 		// Final persistence flush (removes _streaming flag).
-		flushPersistence(run);
+		flushPersistence(run).catch(() => {});
 
 		// Signal completion to all subscribers.
 		for (const sub of run.subscribers) {
@@ -1910,7 +1972,7 @@ function wireChildProcess(run: ActiveRun): void {
 		const message = err instanceof Error ? err.message : String(err);
 		emitError(`Failed to start agent: ${message}`);
 		run.status = "error";
-		flushPersistence(run);
+		flushPersistence(run).catch(() => {});
 		for (const sub of run.subscribers) {
 			try {
 				sub(null);
@@ -2011,7 +2073,7 @@ function finalizeWaitingRun(run: ActiveRun): void {
 
 	stopSubscribeProcess(run);
 
-	flushPersistence(run);
+	flushPersistence(run).catch(() => {});
 
 	for (const sub of run.subscribers) {
 		try { sub(null); } catch { /* ignore */ }
@@ -2070,11 +2132,11 @@ function schedulePersist(run: ActiveRun) {
 	const delay = Math.max(0, PERSIST_INTERVAL_MS - elapsed);
 	run._persistTimer = setTimeout(() => {
 		run._persistTimer = null;
-		flushPersistence(run);
+		flushPersistence(run).catch(() => {});
 	}, delay);
 }
 
-function flushPersistence(run: ActiveRun) {
+async function flushPersistence(run: ActiveRun) {
 	if (run._persistTimer) {
 		clearTimeout(run._persistTimer);
 		run._persistTimer = null;
@@ -2111,7 +2173,7 @@ function flushPersistence(run: ActiveRun) {
 	}
 
 	try {
-		upsertMessage(run.sessionId, message);
+		await upsertMessage(run.sessionId, message);
 	} catch (err) {
 		console.error("[active-runs] Persistence error:", err);
 	}
@@ -2121,43 +2183,43 @@ function flushPersistence(run: ActiveRun) {
  * Upsert a single message into the session JSONL.
  * If a line with the same `id` already exists it is replaced; otherwise appended.
  */
-function upsertMessage(
+async function upsertMessage(
 	sessionId: string,
 	message: Record<string, unknown>,
 ) {
-	ensureDir();
+	await ensureDir();
 	const fp = join(webChatDir(), `${sessionId}.jsonl`);
-	if (!existsSync(fp)) {writeFileSync(fp, "");}
-
 	const msgId = message.id as string;
-	const content = readFileSync(fp, "utf-8");
-	const lines = content.split("\n").filter((l) => l.trim());
-
 	let found = false;
-	const updated = lines.map((line) => {
-		try {
-			const parsed = JSON.parse(line);
-			if (parsed.id === msgId) {
-				found = true;
-				return JSON.stringify(message);
+	await queueFileMutation(fp, async () => {
+		if (!await pathExistsAsync(fp)) {await writeFile(fp, "");}
+		const content = await readFile(fp, "utf-8");
+		const lines = content.split("\n").filter((l) => l.trim());
+		const updated = lines.map((line) => {
+			try {
+				const parsed = JSON.parse(line);
+				if (parsed.id === msgId) {
+					found = true;
+					return JSON.stringify(message);
+				}
+			} catch {
+				/* keep as-is */
 			}
-		} catch {
-			/* keep as-is */
+			return line;
+		});
+
+		if (!found) {
+			updated.push(JSON.stringify(message));
 		}
-		return line;
+
+		await writeFile(fp, updated.join("\n") + "\n");
 	});
-
-	if (!found) {
-		updated.push(JSON.stringify(message));
-	}
-
-	writeFileSync(fp, updated.join("\n") + "\n");
 
 	if (!sessionId.includes(":subagent:")) {
 		if (!found) {
-			updateIndex(sessionId, { incrementCount: 1 });
+			await updateIndex(sessionId, { incrementCount: 1 });
 		} else {
-			updateIndex(sessionId, {});
+			await updateIndex(sessionId, {});
 		}
 	}
 }

@@ -24,6 +24,7 @@ import {
   stopManagedWebRuntime,
   waitForWebRuntime,
 } from "./web-runtime.js";
+import { discoverWorkspaceDirs, syncManagedSkills, type SkillSyncResult } from "./workspace-seed.js";
 
 type SpawnResult = {
   code: number;
@@ -68,6 +69,7 @@ export type UpdateWebRuntimeSummary = {
   reason: string;
   gatewayRestarted: boolean;
   gatewayError?: string;
+  skillSync: SkillSyncResult;
 };
 
 export type StopWebRuntimeSummary = {
@@ -409,6 +411,9 @@ export async function updateWebRuntimeCommand(
     json: Boolean(opts.json),
   });
 
+  const workspaceDirs = discoverWorkspaceDirs(stateDir);
+  const skillSyncResult = syncManagedSkills({ workspaceDirs, packageRoot });
+
   const ensureResult = await ensureManagedWebRuntime({
     stateDir,
     packageRoot,
@@ -432,6 +437,7 @@ export async function updateWebRuntimeCommand(
     reason: ensureResult.reason,
     gatewayRestarted: gatewayResult.restarted,
     gatewayError: gatewayResult.error,
+    skillSync: skillSyncResult,
   };
 
   if (!opts.json) {
@@ -452,6 +458,7 @@ export async function updateWebRuntimeCommand(
         ),
       );
     }
+    runtime.log(`Skills synced: ${summary.skillSync.syncedSkills.join(", ")} (${summary.skillSync.workspaceDirs.length} workspace${summary.skillSync.workspaceDirs.length === 1 ? "" : "s"})`);
     runtime.log(`Web runtime: ${summary.ready ? "ready" : "not ready"}`);
     if (!summary.ready) {
       runtime.log(theme.warn(summary.reason));

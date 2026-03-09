@@ -40,6 +40,19 @@ vi.mock("node:fs", async (importOriginal) => {
 	};
 });
 
+vi.mock("node:fs/promises", async (importOriginal) => {
+	const original = await importOriginal<typeof import("node:fs/promises")>();
+	return {
+		...original,
+		access: vi.fn(async () => {
+			throw new Error("ENOENT");
+		}),
+		readFile: vi.fn(async () => ""),
+		writeFile: vi.fn(async () => undefined),
+		mkdir: vi.fn(async () => undefined),
+	};
+});
+
 import type { SseEvent } from "./active-runs.js";
 
 /**
@@ -134,6 +147,19 @@ describe("active-runs", () => {
 				readFileSync: vi.fn(() => ""),
 				writeFileSync: vi.fn(),
 				mkdirSync: vi.fn(),
+			};
+		});
+		vi.mock("node:fs/promises", async (importOriginal) => {
+			const original =
+				await importOriginal<typeof import("node:fs/promises")>();
+			return {
+				...original,
+				access: vi.fn(async () => {
+					throw new Error("ENOENT");
+				}),
+				readFile: vi.fn(async () => ""),
+				writeFile: vi.fn(async () => undefined),
+				mkdir: vi.fn(async () => undefined),
 			};
 		});
 	});

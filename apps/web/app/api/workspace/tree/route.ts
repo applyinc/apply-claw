@@ -1,6 +1,14 @@
-import { readdirSync, readFileSync, existsSync, statSync, type Dirent } from "node:fs";
+import type { Dirent } from "node:fs";
+import { access, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { resolveWorkspaceRoot, resolveOpenClawStateDir, getActiveWorkspaceName, parseSimpleYaml, duckdbQueryAll, isDatabaseFile } from "@/lib/workspace";
+import {
+  resolveWorkspaceRoot,
+  resolveOpenClawStateDir,
+  getActiveWorkspaceName,
+  parseSimpleYaml,
+  duckdbQueryAllAsync,
+  isDatabaseFile,
+} from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -25,14 +33,24 @@ type DbObject = {
 };
 
 /** Read .object.yaml metadata from a directory if it exists. */
-function readObjectMeta(
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Read .object.yaml metadata from a directory if it exists. */
+async function readObjectMeta(
   dirPath: string,
-): { icon?: string; defaultView?: string } | null {
+): Promise<{ icon?: string; defaultView?: string } | null> {
   const yamlPath = join(dirPath, ".object.yaml");
-  if (!existsSync(yamlPath)) {return null;}
+  if (!await pathExists(yamlPath)) {return null;}
 
   try {
-    const content = readFileSync(yamlPath, "utf-8");
+    const content = await readFile(yamlPath, "utf-8");
     const parsed = parseSimpleYaml(content);
     return {
       icon: parsed.icon as string | undefined,
@@ -48,9 +66,9 @@ function readObjectMeta(
  * directories even when .object.yaml files are missing.
  * Shallower databases win on name conflicts (parent priority).
  */
-function loadDbObjects(): Map<string, DbObject> {
+async function loadDbObjects(): Promise<Map<string, DbObject>> {
   const map = new Map<string, DbObject>();
-  const rows = duckdbQueryAll<DbObject & { name: string }>(
+  const rows = await duckdbQueryAllAsync<DbObject & { name: string }>(
     "SELECT name, icon, default_view FROM objects",
     "name",
   );
@@ -61,12 +79,15 @@ function loadDbObjects(): Map<string, DbObject> {
 }
 
 /** Resolve a dirent's effective type, following symlinks to their target. */
-function resolveEntryType(entry: Dirent, absPath: string): "directory" | "file" | null {
+async function resolveEntryType(
+  entry: Dirent,
+  absPath: string,
+): Promise<"directory" | "file" | null> {
   if (entry.isDirectory()) {return "directory";}
   if (entry.isFile()) {return "file";}
   if (entry.isSymbolicLink()) {
     try {
-      const st = statSync(absPath);
+      const st = await stat(absPath);
       if (st.isDirectory()) {return "directory";}
       if (st.isFile()) {return "file";}
     } catch {
@@ -77,17 +98,17 @@ function resolveEntryType(entry: Dirent, absPath: string): "directory" | "file" 
 }
 
 /** Recursively build a tree from a workspace directory. */
-function buildTree(
+async function buildTree(
   absDir: string,
   relativeBase: string,
   dbObjects: Map<string, DbObject>,
   showHidden = false,
-): TreeNode[] {
+): Promise<TreeNode[]> {
   const nodes: TreeNode[] = [];
 
   let entries: Dirent[];
   try {
-    entries = readdirSync(absDir, { withFileTypes: true });
+    entries = await readdir(absDir, { withFileTypes: true });
   } catch {
     return nodes;
   }
@@ -100,33 +121,33 @@ function buildTree(
   });
 
   // Sort: directories first, then files, alphabetical within each group
-  const sorted = filtered.toSorted((a, b) => {
-    const absA = join(absDir, a.name);
-    const absB = join(absDir, b.name);
-    const typeA = resolveEntryType(a, absA);
-    const typeB = resolveEntryType(b, absB);
-    const dirA = typeA === "directory";
-    const dirB = typeB === "directory";
+  const typedEntries = await Promise.all(filtered.map(async (entry) => {
+    const absPath = join(absDir, entry.name);
+    const effectiveType = await resolveEntryType(entry, absPath);
+    return { entry, absPath, effectiveType };
+  }));
+
+  const sorted = typedEntries.toSorted((a, b) => {
+    const dirA = a.effectiveType === "directory";
+    const dirB = b.effectiveType === "directory";
     if (dirA && !dirB) {return -1;}
     if (!dirA && dirB) {return 1;}
-    return a.name.localeCompare(b.name);
+    return a.entry.name.localeCompare(b.entry.name);
   });
 
-  for (const entry of sorted) {
+  for (const { entry, absPath, effectiveType } of sorted) {
     // .object.yaml is consumed for metadata; only show it as a visible node when revealing hidden files
     if (entry.name === ".object.yaml" && !showHidden) {continue;}
-    const absPath = join(absDir, entry.name);
     const relPath = relativeBase
       ? `${relativeBase}/${entry.name}`
       : entry.name;
 
     const isSymlink = entry.isSymbolicLink();
-    const effectiveType = resolveEntryType(entry, absPath);
 
     if (effectiveType === "directory") {
-      const objectMeta = readObjectMeta(absPath);
+      const objectMeta = await readObjectMeta(absPath);
       const dbObject = dbObjects.get(entry.name);
-      const children = buildTree(absPath, relPath, dbObjects, showHidden);
+      const children = await buildTree(absPath, relPath, dbObjects, showHidden);
 
       if (objectMeta || dbObject) {
         nodes.push({
@@ -184,7 +205,7 @@ function parseSkillFrontmatter(content: string): { name?: string; emoji?: string
 }
 
 /** Build a virtual "Skills" folder from <workspace>/skills/. */
-function buildSkillsVirtualFolder(): TreeNode | null {
+async function buildSkillsVirtualFolder(): Promise<TreeNode | null> {
   const workspaceRoot = resolveWorkspaceRoot();
   if (!workspaceRoot) {
     return null;
@@ -195,19 +216,19 @@ function buildSkillsVirtualFolder(): TreeNode | null {
   const seen = new Set<string>();
 
   for (const dir of dirs) {
-    if (!existsSync(dir)) {continue;}
+    if (!await pathExists(dir)) {continue;}
     try {
-      const entries = readdirSync(dir, { withFileTypes: true });
+      const entries = await readdir(dir, { withFileTypes: true });
       for (const entry of entries) {
         if (!entry.isDirectory() || seen.has(entry.name)) {continue;}
         if (entry.name === "crm" || entry.name === "browser") {continue;}
         const skillMdPath = join(dir, entry.name, "SKILL.md");
-        if (!existsSync(skillMdPath)) {continue;}
+        if (!await pathExists(skillMdPath)) {continue;}
 
         seen.add(entry.name);
         let displayName = entry.name;
         try {
-          const content = readFileSync(skillMdPath, "utf-8");
+          const content = await readFile(skillMdPath, "utf-8");
           const meta = parseSkillFrontmatter(content);
           if (meta.name) {displayName = meta.name;}
           if (meta.emoji) {displayName = `${meta.emoji} ${displayName}`;}
@@ -249,16 +270,16 @@ export async function GET(req: Request) {
   const root = resolveWorkspaceRoot();
   if (!root) {
     const tree: TreeNode[] = [];
-    const skillsFolder = buildSkillsVirtualFolder();
+    const skillsFolder = await buildSkillsVirtualFolder();
     if (skillsFolder) {tree.push(skillsFolder);}
     return Response.json({ tree, exists: false, workspaceRoot: null, openclawDir, workspace });
   }
 
-  const dbObjects = loadDbObjects();
+  const dbObjects = await loadDbObjects();
 
-  const tree = buildTree(root, "", dbObjects, showHidden);
+  const tree = await buildTree(root, "", dbObjects, showHidden);
 
-  const skillsFolder = buildSkillsVirtualFolder();
+  const skillsFolder = await buildSkillsVirtualFolder();
   if (skillsFolder) {tree.push(skillsFolder);}
 
   return Response.json({ tree, exists: true, workspaceRoot: root, openclawDir, workspace });

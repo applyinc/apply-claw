@@ -569,7 +569,7 @@ function FilterRuleRow({
 			{/* Value editor */}
 			{!noValueNeeded && (
 				<>
-					{(fieldType === "text" || fieldType === "richtext" || fieldType === "email") && (
+					{(fieldType === "text" || fieldType === "richtext" || fieldType === "email" || fieldType === "tags") && (
 						<TextValueEditor
 							value={String(rule.value ?? "")}
 							onChange={(v) => onUpdate({ value: v })}

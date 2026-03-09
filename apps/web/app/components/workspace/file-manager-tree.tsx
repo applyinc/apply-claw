@@ -789,6 +789,8 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
   const [newItemPrompt, setNewItemPrompt] = useState<{ kind: "file" | "folder"; parentPath: string } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const dragExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentDragOverRef = useRef<string | null>(null);
 
   // Persist expanded paths to localStorage whenever they change
   useEffect(() => {
@@ -820,22 +822,32 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
   const handleDragOver = useCallback((event: DragOverEvent) => {
     const overData = event.over?.data.current as { node?: TreeNode; rootDrop?: boolean } | undefined;
     if (overData?.rootDrop) {
+      if (currentDragOverRef.current !== "__root__") {
+        if (dragExpandTimerRef.current) clearTimeout(dragExpandTimerRef.current);
+        currentDragOverRef.current = "__root__";
+      }
       setDragOverPath("__root__");
     } else if (overData?.node) {
-      setDragOverPath(overData.node.path);
-      // Auto-expand folders on drag hover (300ms delay)
       const path = overData.node.path;
-      if (overData.node.type === "folder" || overData.node.type === "object") {
-        setTimeout(() => {
-          setExpandedPaths((prev) => {
-            if (prev.has(path)) {return prev;}
-            const next = new Set(prev);
-            next.add(path);
-            return next;
-          });
-        }, 300);
+      setDragOverPath(path);
+      if (currentDragOverRef.current !== path) {
+        if (dragExpandTimerRef.current) clearTimeout(dragExpandTimerRef.current);
+        currentDragOverRef.current = path;
+        if (overData.node.type === "folder" || overData.node.type === "object") {
+          dragExpandTimerRef.current = setTimeout(() => {
+            if (currentDragOverRef.current !== path) return;
+            setExpandedPaths((prev) => {
+              if (prev.has(path)) return prev;
+              const next = new Set(prev);
+              next.add(path);
+              return next;
+            });
+          }, 300);
+        }
       }
     } else {
+      if (dragExpandTimerRef.current) clearTimeout(dragExpandTimerRef.current);
+      currentDragOverRef.current = null;
       setDragOverPath(null);
     }
   }, []);
@@ -844,6 +856,8 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
     async (event: DragEndEvent) => {
       setActiveNode(null);
       setDragOverPath(null);
+      if (dragExpandTimerRef.current) clearTimeout(dragExpandTimerRef.current);
+      currentDragOverRef.current = null;
       removePointerTracker();
 
       const activeData = event.active.data.current as { node: TreeNode } | undefined;
@@ -901,6 +915,8 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
   const handleDragCancel = useCallback(() => {
     setActiveNode(null);
     setDragOverPath(null);
+    if (dragExpandTimerRef.current) clearTimeout(dragExpandTimerRef.current);
+    currentDragOverRef.current = null;
     removePointerTracker();
   }, [removePointerTracker]);
 

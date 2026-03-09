@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
+import { access, readdir as readdirAsync } from "node:fs/promises";
 import { execSync, exec } from "node:child_process";
 import { promisify } from "node:util";
 import { join, resolve, normalize, relative } from "node:path";
@@ -7,6 +8,15 @@ import YAML from "yaml";
 import { normalizeFilterGroup, type SavedView, type ViewTypeSettings } from "./object-filters";
 
 const execAsync = promisify(exec);
+
+async function pathExistsAsync(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const UI_STATE_FILENAME = ".dench-ui-state.json";
 const FIXED_STATE_DIRNAME = ".openclaw-dench";
@@ -499,6 +509,41 @@ export function discoverDuckDBPaths(root?: string): string[] {
 }
 
 /**
+ * Async version of discoverDuckDBPaths — avoids blocking the event loop
+ * while recursively scanning large workspaces.
+ */
+export async function discoverDuckDBPathsAsync(root?: string): Promise<string[]> {
+  const wsRoot = root ?? resolveWorkspaceRoot();
+  if (!wsRoot) {return [];}
+
+  const results: Array<{ path: string; depth: number }> = [];
+
+  async function walk(dir: string, depth: number): Promise<void> {
+    const dbFile = join(dir, "workspace.duckdb");
+    if (await pathExistsAsync(dbFile)) {
+      results.push({ path: dbFile, depth });
+    }
+
+    try {
+      const entries = await readdirAsync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) {continue;}
+        if (entry.name.startsWith(".")) {continue;}
+        // Skip common non-workspace directories
+        if (entry.name === "tmp" || entry.name === "exports" || entry.name === "node_modules") {continue;}
+        await walk(join(dir, entry.name), depth + 1);
+      }
+    } catch {
+      // unreadable directory
+    }
+  }
+
+  await walk(wsRoot, 0);
+  results.sort((a, b) => a.depth - b.depth);
+  return results.map((r) => r.path);
+}
+
+/**
  * Path to the primary DuckDB database file.
  * Checks the workspace root first, then falls back to any workspace.duckdb
  * discovered in subdirectories (backward compat with legacy layout).
@@ -513,6 +558,20 @@ export function duckdbPath(): string | null {
 
   // Fallback: discover the shallowest workspace.duckdb in subdirectories
   const all = discoverDuckDBPaths(root);
+  return all.length > 0 ? all[0] : null;
+}
+
+/** Async version of duckdbPath — avoids sync recursive discovery fallback. */
+export async function duckdbPathAsync(): Promise<string | null> {
+  const root = resolveWorkspaceRoot();
+  if (!root) {return null;}
+
+  // Try root-level first (standard layout)
+  const rootDb = join(root, "workspace.duckdb");
+  if (await pathExistsAsync(rootDb)) {return rootDb;}
+
+  // Fallback: discover the shallowest workspace.duckdb in subdirectories
+  const all = await discoverDuckDBPathsAsync(root);
   return all.length > 0 ? all[0] : null;
 }
 
@@ -601,7 +660,7 @@ export function duckdbQuery<T = Record<string, unknown>>(
 export async function duckdbQueryAsync<T = Record<string, unknown>>(
   sql: string,
 ): Promise<T[]> {
-  const db = duckdbPath();
+  const db = await duckdbPathAsync();
   if (!db) {return [];}
 
   const bin = resolveDuckdbBin();
@@ -681,7 +740,7 @@ export async function duckdbQueryAllAsync<T = Record<string, unknown>>(
   sql: string,
   dedupeKey?: keyof T,
 ): Promise<T[]> {
-  const dbPaths = discoverDuckDBPaths();
+  const dbPaths = await discoverDuckDBPathsAsync();
   if (dbPaths.length === 0) {return [];}
 
   const bin = resolveDuckdbBin();
@@ -751,6 +810,33 @@ export function findDuckDBForObject(objectName: string): string | null {
   return null;
 }
 
+/** Async version of findDuckDBForObject — avoids blocking recursive discovery. */
+export async function findDuckDBForObjectAsync(objectName: string): Promise<string | null> {
+  const dbPaths = await discoverDuckDBPathsAsync();
+  if (dbPaths.length === 0) {return null;}
+
+  const bin = resolveDuckdbBin();
+  if (!bin) {return null;}
+
+  const sql = `SELECT id FROM objects WHERE name = '${objectName.replace(/'/g, "''")}' LIMIT 1`;
+  const escapedSql = sql.replace(/'/g, "'\\''");
+
+  for (const db of dbPaths) {
+    try {
+      const { stdout } = await execAsync(
+        `'${bin}' -json '${db}' '${escapedSql}'`,
+        { encoding: "utf-8", timeout: 5_000, maxBuffer: 1024 * 1024, shell: "/bin/sh" },
+      );
+      const trimmed = stdout.trim();
+      if (trimmed && trimmed !== "[]") {return db;}
+    } catch {
+      // continue to next DB
+    }
+  }
+
+  return null;
+}
+
 /**
  * Execute a DuckDB statement (no JSON output expected).
  * Used for INSERT/UPDATE/ALTER operations.
@@ -759,6 +845,13 @@ export function duckdbExec(sql: string): boolean {
   const db = duckdbPath();
   if (!db) {return false;}
   return duckdbExecOnFile(db, sql);
+}
+
+/** Async version of duckdbExec — avoids sync DB discovery fallback. */
+export async function duckdbExecAsync(sql: string): Promise<boolean> {
+  const db = await duckdbPathAsync();
+  if (!db) {return false;}
+  return duckdbExecOnFileAsync(db, sql);
 }
 
 /**
@@ -772,6 +865,24 @@ export function duckdbExecOnFile(dbFilePath: string, sql: string): boolean {
   try {
     const escapedSql = sql.replace(/'/g, "'\\''");
     execSync(`'${bin}' '${dbFilePath}' '${escapedSql}'`, {
+      encoding: "utf-8",
+      timeout: 10_000,
+      shell: "/bin/sh",
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Async version of duckdbExecOnFile — does not block the event loop. */
+export async function duckdbExecOnFileAsync(dbFilePath: string, sql: string): Promise<boolean> {
+  const bin = resolveDuckdbBin();
+  if (!bin) {return false;}
+
+  try {
+    const escapedSql = sql.replace(/'/g, "'\\''");
+    await execAsync(`'${bin}' '${dbFilePath}' '${escapedSql}'`, {
       encoding: "utf-8",
       timeout: 10_000,
       shell: "/bin/sh",

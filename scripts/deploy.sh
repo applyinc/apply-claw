@@ -242,17 +242,70 @@ export NEXT_PUBLIC_POSTHOG_KEY="${POSTHOG_KEY:-}"
 
 # ── build ────────────────────────────────────────────────────────────────────
 
-# The `prepack` script (triggered by `npm publish`) runs the DenchClaw build chain:
-#   pnpm build && pnpm web:build && pnpm web:prepack
-# Running `pnpm build` here is a redundant fail-fast: catch CLI build errors
-# before committing to a publish attempt.
+# Run the full build chain here so we can verify the standalone output
+# before publishing. The `prepack` hook in package.json re-runs the same
+# steps during `npm publish` but that's harmless (idempotent).
 if [[ "$SKIP_BUILD" != true ]]; then
   echo "building..."
   pnpm build
 
-  echo "building web app (standalone verification)..."
+  echo "building web app (standalone)..."
   pnpm web:build
+
+  echo "flattening standalone deps..."
+  pnpm web:prepack
 fi
+
+# ── pre-publish: verify standalone node_modules ──────────────────────────────
+
+STANDALONE_APP_NM="apps/web/.next/standalone/apps/web/node_modules"
+
+# Auto-extract serverExternalPackages from next.config.ts — these are NOT
+# bundled by webpack, so they must exist in standalone node_modules or the
+# web runtime will crash with "fetch failed" for users.
+# Also always verify next/react/react-dom which the standalone server needs.
+#
+# Optional native accelerators (bufferutil, utf-8-validate) are skipped —
+# ws works without them.
+OPTIONAL_NATIVE="bufferutil utf-8-validate"
+
+SERVER_EXTERNAL="$(node -e "
+  import('file://${ROOT_DIR}/apps/web/next.config.ts')
+    .then(m => (m.default.serverExternalPackages || []).forEach(p => console.log(p)))
+    .catch(() => {})
+" 2>/dev/null)"
+
+STANDALONE_OK=true
+CHECKED=""
+
+for mod in next react react-dom $SERVER_EXTERNAL; do
+  [ -z "$mod" ] && continue
+  if [ ! -d "${STANDALONE_APP_NM}/${mod}" ]; then
+    case " $OPTIONAL_NATIVE " in
+      *" $mod "*) continue ;;
+    esac
+    echo "error: required module '${mod}' missing from standalone build (${STANDALONE_APP_NM}/${mod})"
+    STANDALONE_OK=false
+  fi
+  CHECKED="${CHECKED:+$CHECKED }$mod"
+done
+
+if [ "$STANDALONE_OK" != true ]; then
+  die "standalone build is missing required node_modules — web chat will crash at runtime.
+  Run 'pnpm web:build && pnpm web:prepack' and verify the output."
+fi
+
+# Quick sanity: try to resolve each server-external package from the standalone dir.
+for mod in $SERVER_EXTERNAL; do
+  [ -z "$mod" ] && continue
+  case " $OPTIONAL_NATIVE " in
+    *" $mod "*) continue ;;
+  esac
+  if ! node -e "require.resolve('${mod}', { paths: ['${STANDALONE_APP_NM}'] })" 2>/dev/null; then
+    die "standalone '${mod}' module exists but cannot be resolved — check flatten-standalone-deps output"
+  fi
+done
+echo "standalone node_modules verified ($CHECKED)"
 
 # ── publish ──────────────────────────────────────────────────────────────────
 
@@ -302,12 +355,10 @@ if [[ "$SKIP_NPX_SMOKE" != true ]]; then
     npx --yes "${PACKAGE_NAME}@${VERSION}" stop --help
 fi
 
-# Verify the standalone web app was included in the published package.
-# `prepack` should have built it; if this file is missing, the web UI
-# won't work for users who install globally.
+# Post-publish sanity: confirm the standalone server was published.
 STANDALONE_SERVER="apps/web/.next/standalone/apps/web/server.js"
 if [[ ! -f "$STANDALONE_SERVER" ]]; then
-  echo "warning: standalone web app build not found after publish ($STANDALONE_SERVER)"
+  echo "warning: standalone web app server.js not found after publish ($STANDALONE_SERVER)"
   echo "         users may not get a working Web UI — check the prepack step"
 fi
 
