@@ -1067,16 +1067,23 @@ export function parseSimpleYaml(
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   const lines = content.split("\n");
+  let currentListKey: string | null = null;
 
   for (const line of lines) {
-    // Skip comments and empty lines
     if (line.trim().startsWith("#") || !line.trim()) {continue;}
 
-    // Match top-level key: value
-    const match = line.match(/^(\w[\w_-]*)\s*:\s*(.+)/);
+    // Match top-level key: value (value may be empty for list parents)
+    const match = line.match(/^(\w[\w_-]*)\s*:\s*(.*)/);
     if (match) {
+      currentListKey = null;
       const key = match[1];
       let value: unknown = match[2].trim();
+
+      if (value === "") {
+        currentListKey = key;
+        result[key] = [];
+        continue;
+      }
 
       // Strip quotes
       if (
@@ -1099,6 +1106,25 @@ export function parseSimpleYaml(
       }
 
       result[key] = value;
+      continue;
+    }
+
+    // Collect indented list items ("  - value") under the current list key
+    if (currentListKey) {
+      const listMatch = line.match(/^\s+-\s+(.*)/);
+      if (listMatch) {
+        let item: unknown = listMatch[1].trim();
+        if (
+          typeof item === "string" &&
+          ((item.startsWith('"') && item.endsWith('"')) ||
+            (item.startsWith("'") && item.endsWith("'")))
+        ) {
+          item = (item).slice(1, -1);
+        }
+        (result[currentListKey] as unknown[]).push(item);
+      } else {
+        currentListKey = null;
+      }
     }
   }
 
