@@ -72,6 +72,20 @@ vi.mock("node:child_process", () => ({
   spawn: spawnMock,
 }));
 
+const launchdMocks = vi.hoisted(() => ({
+  installWebRuntimeLaunchAgent: vi.fn(() => ({
+    started: true,
+    pid: 7788,
+    runtimeServerPath: "/tmp/.openclaw-dench/web-runtime/app/server.js",
+  })),
+  uninstallWebRuntimeLaunchAgent: vi.fn(),
+}));
+
+vi.mock("./web-runtime-launchd.js", () => ({
+  installWebRuntimeLaunchAgent: launchdMocks.installWebRuntimeLaunchAgent,
+  uninstallWebRuntimeLaunchAgent: launchdMocks.uninstallWebRuntimeLaunchAgent,
+}));
+
 vi.mock("./web-runtime.js", () => ({
   DEFAULT_WEB_APP_PORT: webRuntimeMocks.DEFAULT_WEB_APP_PORT,
   ensureManagedWebRuntime: webRuntimeMocks.ensureManagedWebRuntime,
@@ -130,6 +144,14 @@ describe("updateWebRuntimeCommand", () => {
     promptMocks.confirm.mockImplementation(async () => true);
     promptMocks.isCancel.mockReset();
     promptMocks.isCancel.mockImplementation(() => false);
+
+    launchdMocks.installWebRuntimeLaunchAgent.mockReset();
+    launchdMocks.installWebRuntimeLaunchAgent.mockReturnValue({
+      started: true,
+      pid: 7788,
+      runtimeServerPath: "/tmp/.openclaw-dench/web-runtime/app/server.js",
+    });
+    launchdMocks.uninstallWebRuntimeLaunchAgent.mockReset();
 
     workspaceSeedMocks.discoverWorkspaceDirs.mockReset();
     workspaceSeedMocks.discoverWorkspaceDirs.mockReturnValue(["/tmp/.openclaw-dench/workspace"]);
@@ -324,6 +346,13 @@ describe("startWebRuntimeCommand", () => {
           reason: string;
         },
     );
+    launchdMocks.installWebRuntimeLaunchAgent.mockReset();
+    launchdMocks.installWebRuntimeLaunchAgent.mockReturnValue({
+      started: true,
+      pid: 7788,
+      runtimeServerPath: "/tmp/.openclaw-dench/web-runtime/app/server.js",
+    });
+    launchdMocks.uninstallWebRuntimeLaunchAgent.mockReset();
   });
 
   it("fails closed when non-dench listeners still own the port (prevents cross-process takeover)", async () => {
@@ -340,11 +369,13 @@ describe("startWebRuntimeCommand", () => {
   });
 
   it("fails with actionable remediation when managed runtime is missing (requires explicit update/bootstrap)", async () => {
-    webRuntimeMocks.startManagedWebRuntime.mockReturnValue({
-      started: false,
+    const missingResult = {
+      started: false as const,
       runtimeServerPath: "/tmp/.openclaw-dench/web-runtime/app/server.js",
       reason: "runtime-missing",
-    });
+    };
+    webRuntimeMocks.startManagedWebRuntime.mockReturnValue(missingResult);
+    launchdMocks.installWebRuntimeLaunchAgent.mockReturnValue(missingResult);
     const runtime = runtimeStub();
 
     await expect(startWebRuntimeCommand({}, runtime)).rejects.toThrow("npx denchclaw update");
@@ -365,7 +396,11 @@ describe("startWebRuntimeCommand", () => {
       port: 3100,
       includeLegacyStandalone: true,
     });
-    expect(webRuntimeMocks.startManagedWebRuntime).toHaveBeenCalledWith({
+    const startMock =
+      process.platform === "darwin"
+        ? launchdMocks.installWebRuntimeLaunchAgent
+        : webRuntimeMocks.startManagedWebRuntime;
+    expect(startMock).toHaveBeenCalledWith({
       stateDir: "/tmp/.openclaw-dench",
       port: 3100,
       gatewayPort: 19001,
@@ -386,7 +421,11 @@ describe("startWebRuntimeCommand", () => {
     const runtime = runtimeStub();
     await startWebRuntimeCommand({ webPort: "3100" }, runtime);
 
-    expect(webRuntimeMocks.startManagedWebRuntime).toHaveBeenCalledWith(
+    const startMock =
+      process.platform === "darwin"
+        ? launchdMocks.installWebRuntimeLaunchAgent
+        : webRuntimeMocks.startManagedWebRuntime;
+    expect(startMock).toHaveBeenCalledWith(
       expect.objectContaining({ gatewayPort: 19001 }),
     );
   });
@@ -396,7 +435,11 @@ describe("startWebRuntimeCommand", () => {
     const runtime = runtimeStub();
     await startWebRuntimeCommand({ webPort: "3100" }, runtime);
 
-    expect(webRuntimeMocks.startManagedWebRuntime).toHaveBeenCalledWith(
+    const startMock =
+      process.platform === "darwin"
+        ? launchdMocks.installWebRuntimeLaunchAgent
+        : webRuntimeMocks.startManagedWebRuntime;
+    expect(startMock).toHaveBeenCalledWith(
       expect.objectContaining({ gatewayPort: 19001 }),
     );
   });
@@ -428,6 +471,13 @@ describe("restartWebRuntimeCommand", () => {
           reason: string;
         },
     );
+    launchdMocks.installWebRuntimeLaunchAgent.mockReset();
+    launchdMocks.installWebRuntimeLaunchAgent.mockReturnValue({
+      started: true,
+      pid: 7788,
+      runtimeServerPath: "/tmp/.openclaw-dench/web-runtime/app/server.js",
+    });
+    launchdMocks.uninstallWebRuntimeLaunchAgent.mockReset();
   });
 
   it("stops and restarts managed runtime (same stop+start lifecycle as start command)", async () => {
@@ -444,7 +494,11 @@ describe("restartWebRuntimeCommand", () => {
       port: 3100,
       includeLegacyStandalone: true,
     });
-    expect(webRuntimeMocks.startManagedWebRuntime).toHaveBeenCalledWith({
+    const startMock =
+      process.platform === "darwin"
+        ? launchdMocks.installWebRuntimeLaunchAgent
+        : webRuntimeMocks.startManagedWebRuntime;
+    expect(startMock).toHaveBeenCalledWith({
       stateDir: "/tmp/.openclaw-dench",
       port: 3100,
       gatewayPort: 19001,

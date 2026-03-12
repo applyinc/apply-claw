@@ -84,7 +84,7 @@ export type StartManagedWebRuntimeResult =
   | {
       started: false;
       runtimeServerPath: string;
-      reason: "runtime-missing";
+      reason: string;
     };
 
 export type WebPortListenerOwnership = "managed" | "legacy-standalone" | "foreign";
@@ -279,7 +279,7 @@ function writeManagedWebRuntimeManifest(
   return manifest;
 }
 
-function writeManagedWebRuntimeProcess(
+export function writeManagedWebRuntimeProcess(
   stateDir: string,
   processMeta: ManagedWebRuntimeProcess,
 ): void {
@@ -290,7 +290,7 @@ function clearManagedWebRuntimeProcess(stateDir: string): void {
   rmSync(resolveManagedWebRuntimeProcessPath(stateDir), { force: true });
 }
 
-function updateManifestLastPort(
+export function updateManifestLastPort(
   stateDir: string,
   webPort: number,
   gatewayPort: number,
@@ -839,6 +839,11 @@ export async function ensureManagedWebRuntime(params: {
   denchVersion: string;
   port: number;
   gatewayPort: number;
+  startFn?: (p: {
+    stateDir: string;
+    port: number;
+    gatewayPort: number;
+  }) => StartManagedWebRuntimeResult;
 }): Promise<{ ready: boolean; reason: string }> {
   const install = installManagedWebRuntime({
     stateDir: params.stateDir,
@@ -869,7 +874,8 @@ export async function ensureManagedWebRuntime(params: {
     };
   }
 
-  const start = startManagedWebRuntime({
+  const doStart = params.startFn ?? startManagedWebRuntime;
+  const start = doStart({
     stateDir: params.stateDir,
     port: params.port,
     gatewayPort: params.gatewayPort,

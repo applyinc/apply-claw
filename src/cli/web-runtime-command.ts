@@ -24,6 +24,10 @@ import {
   stopManagedWebRuntime,
   waitForWebRuntime,
 } from "./web-runtime.js";
+import {
+  installWebRuntimeLaunchAgent,
+  uninstallWebRuntimeLaunchAgent,
+} from "./web-runtime-launchd.js";
 import { discoverWorkspaceDirs, syncManagedSkills, type SkillSyncResult } from "./workspace-seed.js";
 
 type SpawnResult = {
@@ -399,6 +403,11 @@ export async function updateWebRuntimeCommand(
     readLastKnownWebPort(stateDir) ??
     DEFAULT_WEB_APP_PORT;
   const gatewayPort = resolveGatewayPort(stateDir);
+
+  if (process.platform === "darwin") {
+    uninstallWebRuntimeLaunchAgent();
+  }
+
   const stopResult = await stopManagedWebRuntime({
     stateDir,
     port: selectedPort,
@@ -420,6 +429,10 @@ export async function updateWebRuntimeCommand(
     denchVersion: VERSION,
     port: selectedPort,
     gatewayPort,
+    startFn:
+      process.platform === "darwin"
+        ? (p) => installWebRuntimeLaunchAgent(p)
+        : undefined,
   });
 
   const summary: UpdateWebRuntimeSummary = {
@@ -494,6 +507,11 @@ export async function stopWebRuntimeCommand(
 
   const stateDir = resolveProfileStateDir(profile);
   const selectedPort = parseOptionalPort(opts.webPort) ?? readLastKnownWebPort(stateDir);
+
+  if (process.platform === "darwin") {
+    uninstallWebRuntimeLaunchAgent();
+  }
+
   const stopResult = await stopManagedWebRuntime({
     stateDir,
     port: selectedPort,
@@ -556,6 +574,10 @@ export async function startWebRuntimeCommand(
   const selectedPort = parseOptionalPort(opts.webPort) ?? readLastKnownWebPort(stateDir);
   const gatewayPort = resolveGatewayPort(stateDir);
 
+  if (process.platform === "darwin") {
+    uninstallWebRuntimeLaunchAgent();
+  }
+
   const stopResult = await stopManagedWebRuntime({
     stateDir,
     port: selectedPort,
@@ -574,11 +596,15 @@ export async function startWebRuntimeCommand(
     json: Boolean(opts.json),
   });
 
-  const startResult = startManagedWebRuntime({
-    stateDir,
-    port: selectedPort,
-    gatewayPort,
-  });
+  let startResult;
+  if (process.platform === "darwin") {
+    startResult = installWebRuntimeLaunchAgent({ stateDir, port: selectedPort, gatewayPort });
+    if (!startResult.started && startResult.reason !== "runtime-missing") {
+      startResult = startManagedWebRuntime({ stateDir, port: selectedPort, gatewayPort });
+    }
+  } else {
+    startResult = startManagedWebRuntime({ stateDir, port: selectedPort, gatewayPort });
+  }
 
   if (!startResult.started) {
     const runtimeServerPath = resolveManagedWebRuntimeServerPath(stateDir);
