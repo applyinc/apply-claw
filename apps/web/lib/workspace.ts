@@ -25,6 +25,13 @@ const ROOT_WORKSPACE_DIRNAME = "workspace";
 const WORKSPACE_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 const DEFAULT_WORKSPACE_NAME = "default";
 const DENCHCLAW_PROFILE = "dench";
+const GATEWAY_MAIN_AGENT_ID = "main";
+const CHAT_SLOT_PREFIX = "chat-slot-";
+const DEFAULT_CHAT_POOL_SIZE = 5;
+const RESERVED_WORKSPACE_NAMES = new Set([
+  DEFAULT_WORKSPACE_NAME,
+  GATEWAY_MAIN_AGENT_ID,
+]);
 
 /** In-memory override; takes precedence over persisted state. */
 let _uiActiveWorkspace: string | null | undefined;
@@ -252,8 +259,14 @@ export function registerWorkspacePath(_profile: string, _absolutePath: string): 
   // ~/.openclaw-dench/workspace (default) and ~/.openclaw-dench/workspace-<name>.
 }
 
+function isReservedWorkspaceName(name: string): boolean {
+  const lowered = name.toLowerCase();
+  return RESERVED_WORKSPACE_NAMES.has(lowered) || lowered.startsWith(CHAT_SLOT_PREFIX);
+}
+
 export function isValidWorkspaceName(name: string): boolean {
-  return normalizeWorkspaceName(name) !== null;
+  const normalized = normalizeWorkspaceName(name);
+  return normalized !== null && !isReservedWorkspaceName(normalized);
 }
 
 // ---------------------------------------------------------------------------
@@ -275,8 +288,6 @@ type OpenClawConfig = {
   };
   [key: string]: unknown;
 };
-
-const GATEWAY_MAIN_AGENT_ID = "main";
 
 function workspaceNameToAgentId(workspaceName: string): string {
   return workspaceName === DEFAULT_WORKSPACE_NAME ? GATEWAY_MAIN_AGENT_ID : workspaceName;
@@ -302,7 +313,11 @@ function readOpenClawConfig(): OpenClawConfig {
     return {};
   }
   try {
-    return JSON.parse(readFileSync(configPath, "utf-8")) as OpenClawConfig;
+    const parsed = JSON.parse(readFileSync(configPath, "utf-8")) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as OpenClawConfig;
+    }
+    return {};
   } catch {
     return {};
   }
@@ -317,6 +332,95 @@ function writeOpenClawConfig(config: OpenClawConfig): void {
   writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
 }
 
+function ensureConfigAgents(config: OpenClawConfig): void {
+  if (!config.agents) {
+    config.agents = {};
+  }
+}
+
+function syncDefaultWorkspacePointer(
+  config: OpenClawConfig,
+  workspaceName: string,
+  workspaceDir: string,
+): boolean {
+  if (workspaceName !== DEFAULT_WORKSPACE_NAME) {
+    return false;
+  }
+  ensureConfigAgents(config);
+  if (!config.agents!.defaults) {
+    config.agents!.defaults = {};
+  }
+  if (config.agents!.defaults.workspace === workspaceDir) {
+    return false;
+  }
+  config.agents!.defaults.workspace = workspaceDir;
+  return true;
+}
+
+function ensureConfigAgentList(config: OpenClawConfig): OpenClawAgentEntry[] {
+  ensureConfigAgents(config);
+  if (!Array.isArray(config.agents!.list)) {
+    config.agents!.list = [];
+    const currentDefaultWorkspace = config.agents!.defaults?.workspace;
+    if (currentDefaultWorkspace) {
+      config.agents!.list.push({
+        id: GATEWAY_MAIN_AGENT_ID,
+        workspace: currentDefaultWorkspace,
+      });
+    }
+  }
+  return config.agents!.list;
+}
+
+function upsertAgentWorkspace(
+  list: OpenClawAgentEntry[],
+  agentId: string,
+  workspaceDir: string,
+): boolean {
+  const existing = list.find((agent) => agent.id === agentId);
+  if (existing) {
+    if (existing.workspace === workspaceDir) {
+      return false;
+    }
+    existing.workspace = workspaceDir;
+    return true;
+  }
+  list.push({ id: agentId, workspace: workspaceDir });
+  return true;
+}
+
+function applyDefaultAgentMarker(list: OpenClawAgentEntry[], targetAgentId: string): boolean {
+  let changed = false;
+  for (const agent of list) {
+    if (agent.id === targetAgentId) {
+      if (agent.default !== true) {
+        agent.default = true;
+        changed = true;
+      }
+      continue;
+    }
+    if ("default" in agent) {
+      delete agent.default;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function ensureChatSlotEntries(
+  list: OpenClawAgentEntry[],
+  baseId: string,
+  workspaceDir: string,
+  poolSize: number,
+): boolean {
+  let changed = false;
+  for (let i = 1; i <= poolSize; i++) {
+    const slotId = `${CHAT_SLOT_PREFIX}${baseId}-${i}`;
+    changed = upsertAgentWorkspace(list, slotId, workspaceDir) || changed;
+  }
+  return changed;
+}
+
 /**
  * Upsert an agent entry in `agents.list[]`. If the list doesn't exist yet,
  * bootstrap it with a "main" entry pointing to `agents.defaults.workspace`
@@ -325,45 +429,29 @@ function writeOpenClawConfig(config: OpenClawConfig): void {
  * Workspace name "default" maps to agent ID "main" (the gateway's built-in
  * default agent ID); all other workspace names are used as-is.
  */
-export function ensureAgentInConfig(workspaceName: string, workspaceDir: string): void {
+export function ensureAgentInConfig(
+  workspaceName: string,
+  workspaceDir: string,
+  options?: { markDefault?: boolean },
+): void {
+  const normalized = normalizeWorkspaceName(workspaceName);
+  if (!normalized) {
+    throw new Error("Invalid workspace name.");
+  }
   const config = readOpenClawConfig();
-  if (!config.agents) {
-    config.agents = {};
+  let changed = syncDefaultWorkspacePointer(config, normalized, workspaceDir);
+  const list = ensureConfigAgentList(config);
+  const resolvedId = workspaceNameToAgentId(normalized);
+
+  changed = upsertAgentWorkspace(list, resolvedId, workspaceDir) || changed;
+  if (options?.markDefault ?? true) {
+    changed = applyDefaultAgentMarker(list, resolvedId) || changed;
   }
 
-  const resolvedId = workspaceNameToAgentId(workspaceName);
-
-  if (!Array.isArray(config.agents.list)) {
-    config.agents.list = [];
-    const currentDefaultWorkspace = config.agents.defaults?.workspace;
-    if (currentDefaultWorkspace) {
-      config.agents.list.push({
-        id: GATEWAY_MAIN_AGENT_ID,
-        workspace: currentDefaultWorkspace,
-      });
-    }
+  if (changed) {
+    writeOpenClawConfig(config);
   }
-
-  const existing = config.agents.list.find((a) => a.id === resolvedId);
-  if (existing) {
-    existing.workspace = workspaceDir;
-  } else {
-    config.agents.list.push({ id: resolvedId, workspace: workspaceDir });
-  }
-
-  for (const agent of config.agents.list) {
-    if (agent.id === resolvedId) {
-      agent.default = true;
-    } else {
-      delete agent.default;
-    }
-  }
-
-  writeOpenClawConfig(config);
 }
-
-const CHAT_SLOT_PREFIX = "chat-slot-";
-const DEFAULT_CHAT_POOL_SIZE = 5;
 
 /**
  * Pre-create a pool of chat agent slots in `agents.list[]` so the gateway
@@ -371,23 +459,50 @@ const DEFAULT_CHAT_POOL_SIZE = 5;
  * of the parent workspace agent, enabling concurrent chat sessions.
  */
 export function ensureChatAgentPool(workspaceName: string, workspaceDir: string, poolSize = DEFAULT_CHAT_POOL_SIZE): void {
+  const normalized = normalizeWorkspaceName(workspaceName);
+  if (!normalized) {
+    throw new Error("Invalid workspace name.");
+  }
   const config = readOpenClawConfig();
-  if (!config.agents) { config.agents = {}; }
-  if (!Array.isArray(config.agents.list)) { config.agents.list = []; }
+  let changed = syncDefaultWorkspacePointer(config, normalized, workspaceDir);
+  const list = ensureConfigAgentList(config);
+  const baseId = workspaceNameToAgentId(normalized);
 
-  const baseId = workspaceNameToAgentId(workspaceName);
-  let changed = false;
+  changed = ensureChatSlotEntries(list, baseId, workspaceDir, poolSize) || changed;
 
-  for (let i = 1; i <= poolSize; i++) {
-    const slotId = `${CHAT_SLOT_PREFIX}${baseId}-${i}`;
-    const existing = config.agents.list.find((a) => a.id === slotId);
-    if (!existing) {
-      config.agents.list.push({ id: slotId, workspace: workspaceDir });
-      changed = true;
-    } else if (existing.workspace !== workspaceDir) {
-      existing.workspace = workspaceDir;
-      changed = true;
-    }
+  if (changed) {
+    writeOpenClawConfig(config);
+  }
+}
+
+/**
+ * Repair the managed agent mapping for a workspace in a single config pass.
+ * This is used on chat creation/send so stale `main` or `chat-slot-main-*`
+ * entries are redirected back to the intended managed workspace.
+ */
+export function ensureManagedWorkspaceRouting(
+  workspaceName: string,
+  workspaceDir: string,
+  options?: { markDefault?: boolean; poolSize?: number },
+): void {
+  const normalized = normalizeWorkspaceName(workspaceName);
+  if (!normalized) {
+    throw new Error("Invalid workspace name.");
+  }
+  const config = readOpenClawConfig();
+  let changed = syncDefaultWorkspacePointer(config, normalized, workspaceDir);
+  const list = ensureConfigAgentList(config);
+  const resolvedId = workspaceNameToAgentId(normalized);
+
+  changed = upsertAgentWorkspace(list, resolvedId, workspaceDir) || changed;
+  changed = ensureChatSlotEntries(
+    list,
+    resolvedId,
+    workspaceDir,
+    options?.poolSize ?? DEFAULT_CHAT_POOL_SIZE,
+  ) || changed;
+  if (options?.markDefault) {
+    changed = applyDefaultAgentMarker(list, resolvedId) || changed;
   }
 
   if (changed) {

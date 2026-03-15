@@ -1,7 +1,9 @@
 import {
   discoverWorkspaces,
+  ensureManagedWorkspaceRouting,
   getActiveWorkspaceName,
   resolveOpenClawStateDir,
+  resolveWorkspaceDirForName,
   resolveWorkspaceRoot,
   setUIActiveWorkspace,
 } from "@/lib/workspace";
@@ -44,6 +46,10 @@ export async function POST(req: Request) {
     );
   }
 
+  const workspaceRoot =
+    discovered.find((workspace) => workspace.name === requestedWorkspace)?.workspaceDir
+    ?? resolveWorkspaceDirForName(requestedWorkspace);
+  ensureManagedWorkspaceRouting(requestedWorkspace, workspaceRoot, { markDefault: false });
   setUIActiveWorkspace(requestedWorkspace);
   const activeWorkspace = getActiveWorkspaceName();
   const selected = discoverWorkspaces().find((workspace) => workspace.name === activeWorkspace) ?? null;

@@ -159,6 +159,16 @@ describe("workspace (flat workspace model)", () => {
     });
   });
 
+  describe("isValidWorkspaceName", () => {
+    it("rejects reserved workspace names that collide with managed agent routing", async () => {
+      const { isValidWorkspaceName } = await importWorkspace();
+      expect(isValidWorkspaceName("main")).toBe(false);
+      expect(isValidWorkspaceName("default")).toBe(false);
+      expect(isValidWorkspaceName("chat-slot-main-1")).toBe(false);
+      expect(isValidWorkspaceName("work")).toBe(true);
+    });
+  });
+
   // ─── getActiveWorkspaceName ───────────────────────────────────────
 
   describe("getActiveWorkspaceName", () => {
@@ -600,6 +610,57 @@ describe("workspace (flat workspace model)", () => {
         return s === envWsDir || s === join(STATE_DIR, "workspace-other");
       });
       expect(resolveWorkspaceRoot()).toBe(envWsDir);
+    });
+  });
+
+  describe("ensureManagedWorkspaceRouting", () => {
+    it("repairs the default workspace agent and chat slots without flipping the active default agent", async () => {
+      const { ensureManagedWorkspaceRouting, mockExists, mockReadFile, mockWriteFile } =
+        await importWorkspace();
+      const configPath = join(STATE_DIR, "openclaw.json");
+      const defaultWorkspaceDir = join(STATE_DIR, "workspace");
+      const staleWorkspaceDir = join(STATE_DIR, "workspace-main");
+      const otherWorkspaceDir = join(STATE_DIR, "workspace-kumareth");
+
+      mockExists.mockImplementation((p) => String(p) === configPath);
+      mockReadFile.mockImplementation((p) => {
+        if (String(p) === configPath) {
+          return JSON.stringify({
+            agents: {
+              defaults: {
+                workspace: staleWorkspaceDir,
+              },
+              list: [
+                { id: "main", workspace: staleWorkspaceDir },
+                { id: "chat-slot-main-1", workspace: staleWorkspaceDir },
+                { id: "chat-slot-main-2", workspace: staleWorkspaceDir },
+                { id: "kumareth", workspace: otherWorkspaceDir, default: true },
+              ],
+            },
+          }) as never;
+        }
+        return "" as never;
+      });
+
+      ensureManagedWorkspaceRouting("default", defaultWorkspaceDir, {
+        markDefault: false,
+        poolSize: 2,
+      });
+
+      expect(mockWriteFile).toHaveBeenCalled();
+      const written = JSON.parse(String(mockWriteFile.mock.calls.at(-1)?.[1])) as {
+        agents: {
+          defaults: { workspace?: string };
+          list: Array<{ id: string; workspace?: string; default?: boolean }>;
+        };
+      };
+
+      expect(written.agents.defaults.workspace).toBe(defaultWorkspaceDir);
+      expect(written.agents.list.find((agent) => agent.id === "main")?.workspace).toBe(defaultWorkspaceDir);
+      expect(written.agents.list.find((agent) => agent.id === "chat-slot-main-1")?.workspace).toBe(defaultWorkspaceDir);
+      expect(written.agents.list.find((agent) => agent.id === "chat-slot-main-2")?.workspace).toBe(defaultWorkspaceDir);
+      expect(written.agents.list.find((agent) => agent.id === "kumareth")?.default).toBe(true);
+      expect(written.agents.list.find((agent) => agent.id === "main")?.default).toBeUndefined();
     });
   });
 

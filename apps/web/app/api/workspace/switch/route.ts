@@ -1,7 +1,9 @@
 import {
   discoverWorkspaces,
+  ensureManagedWorkspaceRouting,
   getActiveWorkspaceName,
   resolveOpenClawStateDir,
+  resolveWorkspaceDirForName,
   resolveWorkspaceRoot,
   setUIActiveWorkspace,
   setDefaultAgentInConfig,
@@ -46,6 +48,10 @@ export async function POST(req: Request) {
     );
   }
 
+  const workspaceRoot =
+    discovered.find((workspace) => workspace.name === requestedWorkspace)?.workspaceDir
+    ?? resolveWorkspaceDirForName(requestedWorkspace);
+  ensureManagedWorkspaceRouting(requestedWorkspace, workspaceRoot, { markDefault: false });
   setUIActiveWorkspace(requestedWorkspace);
   setDefaultAgentInConfig(requestedWorkspace);
   trackServer("workspace_switched");

@@ -2,8 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/lib/workspace", () => ({
   discoverWorkspaces: vi.fn(() => []),
+  ensureManagedWorkspaceRouting: vi.fn(),
   getActiveWorkspaceName: vi.fn(() => null),
   resolveOpenClawStateDir: vi.fn(() => "/home/testuser/.openclaw-dench"),
+  resolveWorkspaceDirForName: vi.fn((name: string) =>
+    name === "default"
+      ? "/home/testuser/.openclaw-dench/workspace"
+      : `/home/testuser/.openclaw-dench/workspace-${name}`,
+  ),
   resolveWorkspaceRoot: vi.fn(() => null),
   setUIActiveWorkspace: vi.fn(),
 }));
@@ -170,6 +176,11 @@ describe("profiles API", () => {
     expect(json.stateDir).toBe(STATE_DIR);
     expect(json.workspaceRoot).toBe(`${STATE_DIR}/workspace-work`);
     expect(json.workspace.name).toBe("work");
+    expect(workspace.ensureManagedWorkspaceRouting).toHaveBeenCalledWith(
+      "work",
+      `${STATE_DIR}/workspace-work`,
+      { markDefault: false },
+    );
     expect(workspace.setUIActiveWorkspace).toHaveBeenCalledWith("work");
   });
 

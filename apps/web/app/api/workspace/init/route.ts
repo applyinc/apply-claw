@@ -115,7 +115,10 @@ export async function POST(req: Request) {
   }
   if (!WORKSPACE_NAME_RE.test(workspaceName) || !isValidWorkspaceName(workspaceName)) {
     return Response.json(
-      { error: "Invalid workspace name. Use letters, numbers, hyphens, or underscores." },
+      {
+        error:
+          "Invalid or reserved workspace name. Use letters, numbers, hyphens, or underscores. Reserved names include 'main', 'default', and 'chat-slot-*'.",
+      },
       { status: 400 },
     );
   }

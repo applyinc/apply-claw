@@ -69,6 +69,18 @@ describe("POST /api/workspace/init", () => {
     expect(response.status).toBe(400);
   });
 
+  it("rejects reserved workspace names like main", async () => {
+    const workspace = await import("@/lib/workspace");
+    vi.mocked(workspace.isValidWorkspaceName).mockImplementation(
+      (name: string) => name !== "main",
+    );
+
+    const response = await callInit({ workspace: "main" });
+    expect(response.status).toBe(400);
+    const json = await response.json();
+    expect(String(json.error)).toContain("reserved");
+  });
+
   it("returns 409 when workspace already exists", async () => {
     const workspace = await import("@/lib/workspace");
     vi.mocked(workspace.discoverWorkspaces).mockReturnValue([
