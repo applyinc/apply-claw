@@ -484,6 +484,46 @@ describe("active-runs", () => {
 			expect(completions).toHaveLength(1);
 		});
 
+		it("surfaces scope error with remediation steps when Gateway rejects operator.write", async () => {
+			const { child, startRun, subscribeToRun } = await setup();
+
+			const events: SseEvent[] = [];
+			const completions: boolean[] = [];
+
+			startRun({
+				sessionId: "s-scope",
+				message: "hello",
+				agentSessionId: "s-scope",
+			});
+
+			subscribeToRun(
+				"s-scope",
+				(event) => {
+					if (event) {
+						events.push(event);
+					} else {
+						completions.push(true);
+					}
+				},
+				{ replay: false },
+			);
+
+			const err = new Error("missing scope: operator.write. The OpenClaw Gateway rejected this request because the web app's credentials lack the required scope. Fix: run `npx denchclaw bootstrap` to re-pair, or set OPENCLAW_GATEWAY_PASSWORD in the web app's environment.");
+			child._emit("error", err);
+
+			expect(
+				events.some(
+					(e) =>
+						e.type === "text-delta" &&
+						typeof e.delta === "string" &&
+						(e.delta).includes("Failed to start agent") &&
+						(e.delta).includes("missing scope: operator.write"),
+				),
+			).toBe(true);
+
+			expect(completions).toHaveLength(1);
+		});
+
 		it("does not crash on readline error (the root cause of 'Unhandled error event')", async () => {
 			const { child, startRun } = await setup();
 

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createPrivateKey, createPublicKey, randomUUID, sign } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -150,17 +150,100 @@ type SpawnGatewayProcessParams = {
 type BuildConnectParamsOptions = {
 	clientMode?: "webchat" | "backend" | "cli" | "ui" | "node" | "probe" | "test";
 	caps?: string[];
+	nonce?: string;
+	deviceIdentity?: DeviceIdentity | null;
+	deviceToken?: string | null;
 };
 
 const DEFAULT_GATEWAY_PORT = 18_789;
 const OPEN_TIMEOUT_MS = 8_000;
+const CHALLENGE_TIMEOUT_MS = 5_000;
 const REQUEST_TIMEOUT_MS = 12_000;
 const DEFAULT_GATEWAY_CLIENT_CAPS = ["tool-events"];
 const SESSIONS_PATCH_RETRY_DELAY_MS = 150;
 const SESSIONS_PATCH_MAX_ATTEMPTS = 2;
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 type AgentSubscribeSupport = "unknown" | "supported" | "unsupported";
 let cachedAgentSubscribeSupport: AgentSubscribeSupport = "unknown";
+
+type DeviceIdentity = {
+	deviceId: string;
+	publicKeyPem: string;
+	privateKeyPem: string;
+};
+
+type DeviceAuth = {
+	deviceId: string;
+	token: string;
+	scopes: string[];
+};
+
+function base64UrlEncode(buf: Buffer): string {
+	return buf.toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
+}
+
+function derivePublicKeyRaw(publicKeyPem: string): Buffer {
+	const spki = createPublicKey(publicKeyPem).export({ type: "spki", format: "der" });
+	if (
+		spki.length === ED25519_SPKI_PREFIX.length + 32 &&
+		spki.subarray(0, ED25519_SPKI_PREFIX.length).equals(ED25519_SPKI_PREFIX)
+	) {
+		return spki.subarray(ED25519_SPKI_PREFIX.length);
+	}
+	return spki;
+}
+
+function signDevicePayload(privateKeyPem: string, payload: string): string {
+	const key = createPrivateKey(privateKeyPem);
+	return base64UrlEncode(sign(null, Buffer.from(payload, "utf8"), key) as unknown as Buffer);
+}
+
+function loadDeviceIdentity(stateDir: string): DeviceIdentity | null {
+	const filePath = join(stateDir, "identity", "device.json");
+	if (!existsSync(filePath)) {
+		return null;
+	}
+	try {
+		const parsed = parseJsonObject(readFileSync(filePath, "utf-8"));
+		if (
+			parsed &&
+			typeof parsed.deviceId === "string" &&
+			typeof parsed.publicKeyPem === "string" &&
+			typeof parsed.privateKeyPem === "string"
+		) {
+			return {
+				deviceId: parsed.deviceId,
+				publicKeyPem: parsed.publicKeyPem,
+				privateKeyPem: parsed.privateKeyPem,
+			};
+		}
+	} catch { /* ignore */ }
+	return null;
+}
+
+function loadDeviceAuth(stateDir: string): DeviceAuth | null {
+	const filePath = join(stateDir, "identity", "device-auth.json");
+	if (!existsSync(filePath)) {
+		return null;
+	}
+	try {
+		const parsed = parseJsonObject(readFileSync(filePath, "utf-8"));
+		if (!parsed || typeof parsed.deviceId !== "string") {
+			return null;
+		}
+		const tokens = asRecord(parsed.tokens);
+		const operator = asRecord(tokens?.operator);
+		if (operator && typeof operator.token === "string") {
+			return {
+				deviceId: parsed.deviceId,
+				token: operator.token,
+				scopes: Array.isArray(operator.scopes) ? (operator.scopes as string[]) : [],
+			};
+		}
+	} catch { /* ignore */ }
+	return null;
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -302,19 +385,54 @@ export function buildConnectParams(
 			)
 		: DEFAULT_GATEWAY_CLIENT_CAPS;
 	const clientMode = options?.clientMode ?? "backend";
-	const auth =
-		settings.token || settings.password
-			? {
-					...(settings.token ? { token: settings.token } : {}),
-					...(settings.password ? { password: settings.password } : {}),
-				}
-			: undefined;
+	const clientId = "gateway-client";
+	const role = "operator";
+	const scopes = ["operator.read", "operator.write", "operator.admin"];
+
+	const hasGatewayAuth = Boolean(settings.token || settings.password);
+	const deviceToken = options?.deviceToken;
+	const auth = hasGatewayAuth || deviceToken
+		? {
+				...(settings.token ? { token: settings.token } : {}),
+				...(settings.password ? { password: settings.password } : {}),
+				...(deviceToken ? { deviceToken } : {}),
+			}
+		: undefined;
+
+	const nonce = options?.nonce;
+	const identity = options?.deviceIdentity;
+	let device: Record<string, unknown> | undefined;
+	if (identity && nonce) {
+		const signedAtMs = Date.now();
+		const platform = process.platform;
+		const payload = [
+			"v3",
+			identity.deviceId,
+			clientId,
+			clientMode,
+			role,
+			scopes.join(","),
+			String(signedAtMs),
+			settings.token ?? "",
+			nonce,
+			platform,
+			"",
+		].join("|");
+		const signature = signDevicePayload(identity.privateKeyPem, payload);
+		device = {
+			id: identity.deviceId,
+			publicKey: base64UrlEncode(derivePublicKeyRaw(identity.publicKeyPem)),
+			signature,
+			signedAt: signedAtMs,
+			nonce,
+		};
+	}
 
 	return {
 		minProtocol: 3,
 		maxProtocol: 3,
 		client: {
-			id: "gateway-client",
+			id: clientId,
 			version: "dev",
 			platform: process.platform,
 			mode: clientMode,
@@ -322,10 +440,11 @@ export function buildConnectParams(
 		},
 		locale: "en-US",
 		userAgent: "denchclaw-web",
-		role: "operator",
-		scopes: ["operator.read", "operator.write", "operator.admin"],
+		role,
+		scopes,
 		caps,
 		...(auth ? { auth } : {}),
+		...(device ? { device } : {}),
 	};
 }
 
@@ -367,6 +486,27 @@ function isRetryableGatewayMessage(message: string): boolean {
 	);
 }
 
+const MISSING_SCOPE_RE = /missing scope:\s*(\S+)/i;
+
+/**
+ * Detect "missing scope: ..." errors from the Gateway and return an
+ * actionable message. The Gateway requires device identity for scope grants;
+ * this error means the device keypair at ~/.openclaw-dench/identity/ is
+ * missing or invalid.
+ */
+export function enhanceScopeError(raw: string): string | null {
+	const match = MISSING_SCOPE_RE.exec(raw);
+	if (!match) {
+		return null;
+	}
+	const scope = match[1];
+	return [
+		`missing scope: ${scope}.`,
+		"The Gateway did not grant operator scopes — device identity may be missing or invalid.",
+		"Fix: run `npx denchclaw bootstrap` to re-pair the device.",
+	].join(" ");
+}
+
 function toMessageText(data: unknown): string | null {
 	if (typeof data === "string") {
 		return data;
@@ -386,12 +526,30 @@ class GatewayWsClient {
 	private ws: NodeWebSocket | null = null;
 	private pending = new Map<string, PendingGatewayRequest>();
 	private closed = false;
+	private challengeNonce: string | null = null;
+	private challengeResolve: ((nonce: string) => void) | null = null;
 
 	constructor(
 		private readonly settings: GatewayConnectionSettings,
 		private readonly onEvent: (frame: GatewayEventFrame) => void,
 		private readonly onClose: (code: number, reason: string) => void,
 	) {}
+
+	waitForChallenge(timeoutMs = CHALLENGE_TIMEOUT_MS): Promise<string> {
+		if (this.challengeNonce) {
+			return Promise.resolve(this.challengeNonce);
+		}
+		return new Promise<string>((resolve, reject) => {
+			const timer = setTimeout(() => {
+				this.challengeResolve = null;
+				reject(new Error("Gateway challenge timeout"));
+			}, timeoutMs);
+			this.challengeResolve = (nonce: string) => {
+				clearTimeout(timer);
+				resolve(nonce);
+			};
+		});
+	}
 
 	async open(timeoutMs = OPEN_TIMEOUT_MS): Promise<void> {
 		if (this.ws) {
@@ -521,7 +679,18 @@ class GatewayWsClient {
 		}
 
 		if (frame.type === "event") {
-			this.onEvent(frame as GatewayEventFrame);
+			const evt = frame as GatewayEventFrame;
+			if (evt.event === "connect.challenge") {
+				const payload = asRecord(evt.payload);
+				const nonce = typeof payload?.nonce === "string" ? payload.nonce.trim() : null;
+				if (nonce) {
+					this.challengeNonce = nonce;
+					this.challengeResolve?.(nonce);
+					this.challengeResolve = null;
+				}
+				return;
+			}
+			this.onEvent(evt);
 		}
 	}
 }
@@ -581,9 +750,28 @@ class GatewayProcessHandle
 				(code, reason) => this.handleSocketClose(code, reason),
 			);
 			this.client = client;
+
+			const stateDir = resolveOpenClawStateDir();
+			const deviceIdentity = loadDeviceIdentity(stateDir);
+			const deviceAuth = loadDeviceAuth(stateDir);
+
+			let nonce: string | undefined;
+			if (deviceIdentity) {
+				try {
+					nonce = await client.waitForChallenge();
+				} catch {
+					nonce = undefined;
+				}
+			}
+
+			const connectParams = buildConnectParams(settings, {
+				nonce,
+				deviceIdentity,
+				deviceToken: deviceAuth?.token,
+			});
 			const connectRes = await this.client.request(
 				"connect",
-				buildConnectParams(settings),
+				connectParams,
 			);
 			if (!connectRes.ok) {
 				throw new Error(frameErrorMessage(connectRes));
@@ -649,8 +837,10 @@ class GatewayProcessHandle
 				}
 			}
 		} catch (error) {
-			const err =
-				error instanceof Error ? error : new Error(String(error));
+			const raw =
+				error instanceof Error ? error.message : String(error);
+			const enhanced = enhanceScopeError(raw);
+			const err = new Error(enhanced ?? raw);
 			(this.stderr as PassThrough).write(`${err.message}\n`);
 			this.emit("error", err);
 			this.finish(1, null);

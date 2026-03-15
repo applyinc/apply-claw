@@ -554,6 +554,114 @@ describe("agent-runner", () => {
 		});
 	});
 
+	// ── enhanceScopeError ─────────────────────────────────────────────
+
+	describe("enhanceScopeError", () => {
+		it("returns actionable message for 'missing scope: operator.write'", async () => {
+			const { enhanceScopeError } = await import("./agent-runner.js");
+			const result = enhanceScopeError("missing scope: operator.write");
+			expect(result).toContain("missing scope: operator.write");
+			expect(result).toContain("npx denchclaw bootstrap");
+			expect(result).toContain("device identity");
+		});
+
+		it("returns actionable message for 'missing scope: operator.read'", async () => {
+			const { enhanceScopeError } = await import("./agent-runner.js");
+			const result = enhanceScopeError("missing scope: operator.read");
+			expect(result).toContain("missing scope: operator.read");
+			expect(result).toContain("npx denchclaw bootstrap");
+		});
+
+		it("returns null for non-scope errors", async () => {
+			const { enhanceScopeError } = await import("./agent-runner.js");
+			expect(enhanceScopeError("connection timeout")).toBeNull();
+			expect(enhanceScopeError("unauthorized")).toBeNull();
+			expect(enhanceScopeError("")).toBeNull();
+		});
+	});
+
+	// ── scope error during connect ───────────────────────────────────
+
+	describe("scope error handling", () => {
+		it("emits enhanced error when connect fails with missing scope", async () => {
+			const MockWs = installMockWsModule();
+			MockWs.responseOverrides["connect"] = (frame) => ({
+				type: "res",
+				id: frame.id,
+				ok: false,
+				error: { message: "missing scope: operator.write" },
+			});
+			const { spawnAgentProcess } = await import("./agent-runner.js");
+
+			let stderr = "";
+			let errorEmitted = false;
+			const proc = spawnAgentProcess("hello", "sess-scope-connect");
+			proc.stderr?.on("data", (chunk: Buffer | string) => {
+				stderr += chunk.toString();
+			});
+			proc.on("error", () => {
+				errorEmitted = true;
+			});
+
+			await waitFor(() => errorEmitted, { attempts: 80, delayMs: 10 });
+			expect(stderr).toContain("missing scope: operator.write");
+			expect(stderr).toContain("npx denchclaw bootstrap");
+			proc.kill("SIGTERM");
+		});
+
+		it("emits enhanced error when agent RPC fails with missing scope", async () => {
+			const MockWs = installMockWsModule();
+			MockWs.responseOverrides["agent"] = (frame) => ({
+				type: "res",
+				id: frame.id,
+				ok: false,
+				error: { message: "missing scope: operator.write" },
+			});
+			const { spawnAgentProcess } = await import("./agent-runner.js");
+
+			let stderr = "";
+			let errorEmitted = false;
+			const proc = spawnAgentProcess("hello", "sess-scope-agent");
+			proc.stderr?.on("data", (chunk: Buffer | string) => {
+				stderr += chunk.toString();
+			});
+			proc.on("error", () => {
+				errorEmitted = true;
+			});
+
+			await waitFor(() => errorEmitted, { attempts: 80, delayMs: 10 });
+			expect(stderr).toContain("missing scope: operator.write");
+			expect(stderr).toContain("device identity");
+			proc.kill("SIGTERM");
+		});
+
+		it("does not alter non-scope errors", async () => {
+			const MockWs = installMockWsModule();
+			MockWs.responseOverrides["connect"] = (frame) => ({
+				type: "res",
+				id: frame.id,
+				ok: false,
+				error: { message: "unauthorized: bad token" },
+			});
+			const { spawnAgentProcess } = await import("./agent-runner.js");
+
+			let stderr = "";
+			let errorEmitted = false;
+			const proc = spawnAgentProcess("hello", "sess-nonscopeErr");
+			proc.stderr?.on("data", (chunk: Buffer | string) => {
+				stderr += chunk.toString();
+			});
+			proc.on("error", () => {
+				errorEmitted = true;
+			});
+
+			await waitFor(() => errorEmitted, { attempts: 80, delayMs: 10 });
+			expect(stderr).toContain("unauthorized: bad token");
+			expect(stderr).not.toContain("npx denchclaw bootstrap");
+			proc.kill("SIGTERM");
+		});
+	});
+
 	// ── parseAgentErrorMessage ────────────────────────────────────────
 
 	describe("parseAgentErrorMessage", () => {
