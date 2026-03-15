@@ -6,6 +6,8 @@ import { PostHog } from "posthog-node";
 
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY || "";
 const POSTHOG_HOST = "https://us.i.posthog.com";
+const DENCHCLAW_VERSION = process.env.NEXT_PUBLIC_DENCHCLAW_VERSION || "";
+const OPENCLAW_VERSION = process.env.NEXT_PUBLIC_OPENCLAW_VERSION || "";
 
 let client: PostHog | null = null;
 
@@ -68,6 +70,8 @@ export function trackServer(
     event,
     properties: {
       ...properties,
+      denchclaw_version: DENCHCLAW_VERSION || undefined,
+      openclaw_version: OPENCLAW_VERSION || undefined,
       $process_person_profile: false,
     },
   });

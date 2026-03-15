@@ -1,5 +1,6 @@
 import { PostHog } from "posthog-node";
 import { readTelemetryConfig, getOrCreateAnonymousId } from "./config.js";
+import { VERSION, resolveOpenClawVersion } from "../version.js";
 
 const POSTHOG_KEY = process.env.POSTHOG_KEY || "";
 const POSTHOG_HOST = "https://us.i.posthog.com";
@@ -27,6 +28,8 @@ function getMachineContext(): Record<string, unknown> {
     os: process.platform,
     arch: process.arch,
     node_version: process.version,
+    denchclaw_version: VERSION,
+    openclaw_version: resolveOpenClawVersion(),
   };
 }
 

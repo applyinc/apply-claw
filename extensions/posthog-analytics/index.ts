@@ -2,7 +2,11 @@ import { createPostHogClient, shutdownPostHogClient } from "./lib/posthog-client
 import { TraceContextManager, resolveSessionKey } from "./lib/trace-context.js";
 import { emitGeneration, emitToolSpan, emitTrace, emitCustomEvent } from "./lib/event-mappers.js";
 import { readPrivacyMode } from "./lib/privacy.js";
-import { POSTHOG_KEY as BUILT_IN_KEY } from "./lib/build-env.js";
+import {
+  POSTHOG_KEY as BUILT_IN_KEY,
+  DENCHCLAW_VERSION,
+  OPENCLAW_VERSION,
+} from "./lib/build-env.js";
 import type { PluginConfig } from "./lib/types.js";
 
 export const id = "posthog-analytics";
@@ -29,7 +33,13 @@ export default function register(api: any) {
     return;
   }
 
-  const ph = createPostHogClient(apiKey, config?.host);
+  const versionProps: Record<string, unknown> = {};
+  const dcv = DENCHCLAW_VERSION || process.env.npm_package_version;
+  if (dcv) versionProps.denchclaw_version = dcv;
+  const ocv = OPENCLAW_VERSION || process.env.OPENCLAW_VERSION || process.env.OPENCLAW_SERVICE_VERSION;
+  if (ocv) versionProps.openclaw_version = ocv;
+
+  const ph = createPostHogClient(apiKey, config?.host, versionProps);
   const traceCtx = new TraceContextManager();
 
   const getPrivacyMode = () => readPrivacyMode(api.config);

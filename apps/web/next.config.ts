@@ -1,8 +1,26 @@
 import type { NextConfig } from "next";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { homedir } from "node:os";
+import { createRequire } from "node:module";
+
+const rootPkg = JSON.parse(
+  readFileSync(path.join(import.meta.dirname, "..", "..", "package.json"), "utf-8"),
+) as { version?: string };
+
+let openclawVersion = "";
+try {
+  const req = createRequire(import.meta.url);
+  const oclPkg = req("openclaw/package.json") as { version?: string };
+  openclawVersion = oclPkg.version ?? "";
+} catch { /* openclaw not resolvable at build time */ }
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_DENCHCLAW_VERSION: rootPkg.version ?? "",
+    NEXT_PUBLIC_OPENCLAW_VERSION: openclawVersion,
+  },
+
   // Produce a self-contained standalone build so npm global installs
   // can run the web app with `node server.js` — no npm install or
   // next build required at runtime.

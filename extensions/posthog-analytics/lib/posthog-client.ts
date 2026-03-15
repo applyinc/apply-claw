@@ -15,12 +15,14 @@ export interface CaptureEvent {
 export class PostHogClient {
   private apiKey: string;
   private host: string;
+  private globalProperties: Record<string, unknown>;
   private queue: Array<Record<string, unknown>> = [];
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(apiKey: string, host?: string) {
+  constructor(apiKey: string, host?: string, globalProperties?: Record<string, unknown>) {
     this.apiKey = apiKey;
     this.host = (host || DEFAULT_HOST).replace(/\/$/, "");
+    this.globalProperties = globalProperties ?? {};
     this.timer = setInterval(() => this.flush(), FLUSH_INTERVAL_MS);
     if (this.timer.unref) this.timer.unref();
   }
@@ -30,6 +32,7 @@ export class PostHogClient {
       event: event.event,
       distinct_id: event.distinctId,
       properties: {
+        ...this.globalProperties,
         ...event.properties,
         $lib: "denchclaw-posthog-plugin",
       },
@@ -68,8 +71,12 @@ export class PostHogClient {
   }
 }
 
-export function createPostHogClient(apiKey: string, host?: string): PostHogClient {
-  return new PostHogClient(apiKey, host);
+export function createPostHogClient(
+  apiKey: string,
+  host?: string,
+  globalProperties?: Record<string, unknown>,
+): PostHogClient {
+  return new PostHogClient(apiKey, host, globalProperties);
 }
 
 export async function shutdownPostHogClient(client: PostHogClient): Promise<void> {

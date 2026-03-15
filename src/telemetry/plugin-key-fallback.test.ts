@@ -44,6 +44,8 @@ describe("posthog-analytics plugin key fallback", () => {
   it("uses api.config.apiKey when provided", async () => {
     vi.doMock("../../extensions/posthog-analytics/lib/build-env.js", () => ({
       POSTHOG_KEY: "built-in-key",
+      DENCHCLAW_VERSION: "",
+      OPENCLAW_VERSION: "",
     }));
 
     const { default: register } = await import(
@@ -52,12 +54,18 @@ describe("posthog-analytics plugin key fallback", () => {
     const api = createMockApi({ apiKey: "config-key", enabled: true });
     register(api);
 
-    expect(mockCreatePostHogClient).toHaveBeenCalledWith("config-key", undefined);
+    expect(mockCreatePostHogClient).toHaveBeenCalledWith(
+      "config-key",
+      undefined,
+      expect.any(Object),
+    );
   });
 
   it("falls back to built-in key when api.config has no apiKey", async () => {
     vi.doMock("../../extensions/posthog-analytics/lib/build-env.js", () => ({
       POSTHOG_KEY: "built-in-key",
+      DENCHCLAW_VERSION: "",
+      OPENCLAW_VERSION: "",
     }));
 
     const { default: register } = await import(
@@ -66,12 +74,18 @@ describe("posthog-analytics plugin key fallback", () => {
     const api = createMockApi();
     register(api);
 
-    expect(mockCreatePostHogClient).toHaveBeenCalledWith("built-in-key", undefined);
+    expect(mockCreatePostHogClient).toHaveBeenCalledWith(
+      "built-in-key",
+      undefined,
+      expect.any(Object),
+    );
   });
 
   it("does not initialize when neither config nor built-in key is available", async () => {
     vi.doMock("../../extensions/posthog-analytics/lib/build-env.js", () => ({
       POSTHOG_KEY: "",
+      DENCHCLAW_VERSION: "",
+      OPENCLAW_VERSION: "",
     }));
 
     const { default: register } = await import(
@@ -87,6 +101,8 @@ describe("posthog-analytics plugin key fallback", () => {
   it("registers lifecycle hooks when built-in key is used", async () => {
     vi.doMock("../../extensions/posthog-analytics/lib/build-env.js", () => ({
       POSTHOG_KEY: "built-in-key",
+      DENCHCLAW_VERSION: "",
+      OPENCLAW_VERSION: "",
     }));
 
     const { default: register } = await import(

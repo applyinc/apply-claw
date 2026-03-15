@@ -7,6 +7,8 @@ import { usePathname, useSearchParams } from "next/navigation";
 
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY || "";
 const POSTHOG_HOST = "https://us.i.posthog.com";
+const DENCHCLAW_VERSION = process.env.NEXT_PUBLIC_DENCHCLAW_VERSION || "";
+const OPENCLAW_VERSION = process.env.NEXT_PUBLIC_OPENCLAW_VERSION || "";
 
 let initialized = false;
 
@@ -25,6 +27,12 @@ function initPostHog(anonymousId?: string) {
       ? { distinctID: anonymousId, isIdentifiedID: false }
       : undefined,
   });
+
+  const superProps: Record<string, string> = {};
+  if (DENCHCLAW_VERSION) superProps.denchclaw_version = DENCHCLAW_VERSION;
+  if (OPENCLAW_VERSION) superProps.openclaw_version = OPENCLAW_VERSION;
+  if (Object.keys(superProps).length > 0) posthog.register(superProps);
+
   initialized = true;
 }
 

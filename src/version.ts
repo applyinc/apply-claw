@@ -88,7 +88,7 @@ export function resolveRuntimeServiceVersion(
   );
 }
 
-// Single source of truth for the current OpenClaw version.
+// Single source of truth for the current DenchClaw version.
 // - Embedded/bundled builds: injected define or env var.
 // - Dev/npm builds: package.json.
 export const VERSION =
@@ -96,3 +96,26 @@ export const VERSION =
   process.env.OPENCLAW_BUNDLED_VERSION ||
   resolveVersionFromModuleUrl(import.meta.url) ||
   "0.0.0";
+
+let _cachedOpenClawVersion: string | undefined;
+
+export function resolveOpenClawVersion(): string | undefined {
+  if (_cachedOpenClawVersion !== undefined) return _cachedOpenClawVersion || undefined;
+
+  const envVersion = (process.env.OPENCLAW_VERSION || process.env.OPENCLAW_SERVICE_VERSION)?.trim();
+  if (envVersion) {
+    _cachedOpenClawVersion = envVersion;
+    return envVersion;
+  }
+
+  try {
+    const req = createRequire(import.meta.url);
+    const pkg = req("openclaw/package.json") as { version?: string };
+    const v = pkg.version?.trim();
+    _cachedOpenClawVersion = v || "";
+    return v || undefined;
+  } catch {
+    _cachedOpenClawVersion = "";
+    return undefined;
+  }
+}
