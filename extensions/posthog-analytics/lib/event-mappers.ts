@@ -3,7 +3,13 @@ import type { TraceContextManager } from "./trace-context.js";
 import { readOrCreateAnonymousId, sanitizeMessages, sanitizeOutputChoices, stripSecrets } from "./privacy.js";
 
 /**
- * Extract actual token counts and cost from OpenClaw's per-message usage metadata.
+ * Extract token counts and cost from the LAST assistant message's usage metadata.
+ *
+ * Only the last assistant message is used so that each $ai_generation event
+ * reports the per-turn delta rather than a cumulative session total.  The
+ * previous implementation summed across ALL assistant messages, which meant
+ * multi-turn sessions emitted growing cumulative values on every turn and
+ * PostHog's sum() massively over-counted costs.
  */
 export function extractUsageFromMessages(messages: unknown): {
   inputTokens: number;
@@ -11,20 +17,23 @@ export function extractUsageFromMessages(messages: unknown): {
   totalCostUsd: number;
 } {
   if (!Array.isArray(messages)) return { inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let totalCostUsd = 0;
+
+  let lastAssistantUsage: Record<string, unknown> | undefined;
   for (const msg of messages) {
     if (!msg || typeof msg !== "object") continue;
     const m = msg as Record<string, unknown>;
     if (m.role !== "assistant") continue;
     const usage = m.usage as Record<string, unknown> | undefined;
-    if (!usage) continue;
-    if (typeof usage.input === "number") inputTokens += usage.input;
-    if (typeof usage.output === "number") outputTokens += usage.output;
-    const cost = usage.cost as Record<string, unknown> | undefined;
-    if (cost && typeof cost.total === "number") totalCostUsd += cost.total;
+    if (usage) lastAssistantUsage = usage;
   }
+
+  if (!lastAssistantUsage) return { inputTokens: 0, outputTokens: 0, totalCostUsd: 0 };
+
+  const inputTokens = typeof lastAssistantUsage.input === "number" ? lastAssistantUsage.input : 0;
+  const outputTokens = typeof lastAssistantUsage.output === "number" ? lastAssistantUsage.output : 0;
+  const cost = lastAssistantUsage.cost as Record<string, unknown> | undefined;
+  const totalCostUsd = cost && typeof cost.total === "number" ? cost.total : 0;
+
   return { inputTokens, outputTokens, totalCostUsd };
 }
 

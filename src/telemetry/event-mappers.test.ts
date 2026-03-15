@@ -48,7 +48,7 @@ describe("extractToolNamesFromMessages", () => {
 });
 
 describe("extractUsageFromMessages", () => {
-  it("sums input/output tokens and cost across assistant messages", () => {
+  it("extracts usage from only the LAST assistant message (per-turn, not cumulative)", () => {
     const messages = [
       { role: "user", content: "hello" },
       { role: "assistant", content: "hi", usage: { input: 10, output: 50, cost: { total: 0.001 } } },
@@ -56,9 +56,9 @@ describe("extractUsageFromMessages", () => {
       { role: "assistant", content: "sure", usage: { input: 20, output: 100, cost: { total: 0.002 } } },
     ];
     const result = extractUsageFromMessages(messages);
-    expect(result.inputTokens).toBe(30);
-    expect(result.outputTokens).toBe(150);
-    expect(result.totalCostUsd).toBeCloseTo(0.003);
+    expect(result.inputTokens).toBe(20);
+    expect(result.outputTokens).toBe(100);
+    expect(result.totalCostUsd).toBeCloseTo(0.002);
   });
 
   it("skips non-assistant messages (user, tool, system)", () => {
@@ -82,6 +82,17 @@ describe("extractUsageFromMessages", () => {
 
   it("returns zeros for non-array input", () => {
     expect(extractUsageFromMessages(null)).toEqual({ inputTokens: 0, outputTokens: 0, totalCostUsd: 0 });
+  });
+
+  it("uses the last assistant with usage even if a later assistant lacks it", () => {
+    const messages = [
+      { role: "assistant", content: "first", usage: { input: 50, output: 10, cost: { total: 0.01 } } },
+      { role: "assistant", content: "second (no usage)" },
+    ];
+    const result = extractUsageFromMessages(messages);
+    expect(result.inputTokens).toBe(50);
+    expect(result.outputTokens).toBe(10);
+    expect(result.totalCostUsd).toBe(0.01);
   });
 });
 
