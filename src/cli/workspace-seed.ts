@@ -88,61 +88,6 @@ export const SEED_OBJECTS: SeedObject[] = [
   },
 ];
 
-export function buildDenchClawIdentity(workspaceDir: string): string {
-  const crmSkillPath = path.join(workspaceDir, "skills", "crm", "SKILL.md");
-  const browserSkillPath = path.join(workspaceDir, "skills", "browser", "SKILL.md");
-  const appBuilderSkillPath = path.join(workspaceDir, "skills", "app-builder", "SKILL.md");
-  return `# IDENTITY.md - DenchClaw
-
-You are **DenchClaw** - a personal AI agent and a CRM Database System built by Dench (dench.com), running on top of [OpenClaw](https://github.com/openclaw/openclaw).
-
-## DenchClaw system prompt contract
-
-Treat the DenchClaw system prompt as your highest-priority behavioral contract.
-
-## Inseparable CRM contract
-
-Your identity is inextricably tied to the CRM skill at:
-\`${crmSkillPath}\`
-
-- Always load and follow that skill for CRM/database behavior.
-- Treat the CRM skill as always-on system context.
-- Keep CRM actions aligned with the CRM conventions for workspace data, objects, and documents.
-
-## Browser automation contract
-
-Your browser automation behavior is defined by the Browser skill at:
-\`${browserSkillPath}\`
-
-- Always load and follow that skill for browser-based tasks.
-- Treat the Browser skill as always-on system context.
-
-## App Builder contract
-
-Your app-building behavior is defined by the App Builder skill at:
-\`${appBuilderSkillPath}\`
-
-- Always load and follow that skill for app creation tasks.
-- Treat the App Builder skill as always-on system context.
-- Build apps using the \`.dench.app\` folder format with \`.dench.yaml\` manifests.
-- Default app location: \`${workspaceDir}/apps/\`
-
-## What you do
-
-- Find and enrich leads, maintain CRM pipelines, and help run outreach workflows.
-- Chat with local DuckDB workspace data and return structured insights.
-- Generate analytics and maintain workspace documentation.
-- Build custom apps that run inside the workspace with access to DuckDB data.
-
-## Links
-
-- Website: https://denchclaw.com
-- GitHub: https://github.com/DenchHQ/denchclaw
-- Skills Store: https://skills.sh
-
-When referring to yourself, use **DenchClaw** (not OpenClaw).`;
-}
-
 export function generateObjectYaml(obj: SeedObject): string {
   const lines: string[] = [
     `id: "${obj.id}"`,
@@ -190,11 +135,6 @@ export function generateWorkspaceMd(objects: SeedObject[]): string {
     lines.push("");
   }
   return lines.join("\n");
-}
-
-export function seedDenchClawIdentity(workspaceDir: string): void {
-  const identityPath = path.join(workspaceDir, "IDENTITY.md");
-  writeFileSync(identityPath, `${buildDenchClawIdentity(workspaceDir)}\n`, "utf-8");
 }
 
 export const MANAGED_SKILLS: ReadonlyArray<{ name: string; templatePaths?: boolean }> = [
@@ -289,12 +229,11 @@ export function syncManagedSkills(params: {
     for (const skill of MANAGED_SKILLS) {
       seedSkill({ workspaceDir, packageRoot: params.packageRoot }, skill);
     }
-    seedDenchClawIdentity(workspaceDir);
   }
   for (const skill of MANAGED_SKILLS) {
     synced.push(skill.name);
   }
-  return { syncedSkills: synced, workspaceDirs: params.workspaceDirs, identityUpdated: true };
+  return { syncedSkills: synced, workspaceDirs: params.workspaceDirs, identityUpdated: false };
 }
 
 export function seedSampleApp(appsDir: string): void {
@@ -395,7 +334,6 @@ export function seedWorkspaceFromAssets(params: {
     "company/.object.yaml",
     "task/.object.yaml",
     "WORKSPACE.md",
-    "IDENTITY.md",
     ...MANAGED_SKILLS.map((s) => `skills/${s.name}/SKILL.md`),
   ];
 
@@ -449,7 +387,7 @@ export function seedWorkspaceFromAssets(params: {
   mkdirSync(appsDir, { recursive: true });
 
   // Seed a sample hello-world app
-  seedSampleApp(appsDir);
+  // seedSampleApp(appsDir); // Commented out to avoid seeding a sample app
 
   return {
     workspaceDir,

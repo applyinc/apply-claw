@@ -21,7 +21,6 @@ import {
 } from "@/lib/workspace-bootstrap-templates";
 import {
   seedWorkspaceFromAssets,
-  buildDenchClawIdentity,
 } from "@/lib/workspace-seed";
 import { trackServer } from "@/lib/telemetry";
 
@@ -149,10 +148,7 @@ export async function POST(req: Request) {
   }
 
   if (seedBootstrap) {
-    // Seed bootstrap files from templates (IDENTITY.md is handled by
-    // seedWorkspaceFromAssets below, so skip it in this loop).
     for (const filename of BOOTSTRAP_FILENAMES) {
-      if (filename === "IDENTITY.md") {continue;}
       const filePath = join(workspaceDir, filename);
       if (!existsSync(filePath)) {
         const content = loadTemplateContent(filename, projectRoot);
@@ -166,21 +162,14 @@ export async function POST(req: Request) {
     }
   }
 
-  // Seed managed skills, DenchClaw identity, DuckDB, and CRM object projections.
-  // This is the single source of truth shared with the CLI bootstrap path.
+  // Seed managed skills, DuckDB, and CRM object projections.
+  // DenchClaw identity is injected at runtime via the dench-identity plugin.
   if (projectRoot) {
     const seedResult = seedWorkspaceFromAssets({ workspaceDir, packageRoot: projectRoot });
     seeded.push(...seedResult.projectionFiles);
     if (seedResult.seeded) {
       seeded.push("workspace.duckdb");
     }
-  } else {
-    // No project root available (e.g. standalone/production build without
-    // the repo tree). Still write the DenchClaw identity so the agent has
-    // a usable IDENTITY.md.
-    const identityPath = join(workspaceDir, "IDENTITY.md");
-    writeFileSync(identityPath, buildDenchClawIdentity(workspaceDir) + "\n", "utf-8");
-    seeded.push("IDENTITY.md");
   }
 
   if (seedBootstrap) {

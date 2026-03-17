@@ -2301,6 +2301,11 @@ export async function bootstrapCommand(
           DEFAULT_DENCH_CLOUD_GATEWAY_URL,
       },
     },
+    {
+      pluginId: "dench-identity",
+      sourceDirName: "dench-identity",
+      enabled: true,
+    },
   ];
 
   // Trust managed bundled plugins BEFORE onboard so the gateway daemon never

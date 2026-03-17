@@ -149,7 +149,7 @@ describe("POST /api/workspace/init", () => {
     expect(skillsMkdir).toBeTruthy();
   });
 
-  it("generates IDENTITY.md referencing workspace CRM skill path (not virtual ~skills path)", async () => {
+  it("seeds IDENTITY.md as bootstrap placeholder (full identity is injected at runtime by dench-identity plugin)", async () => {
     const { existsSync, writeFileSync } = await import("node:fs");
     const workspace = await import("@/lib/workspace");
     vi.mocked(workspace.discoverWorkspaces).mockReturnValue([]);
@@ -165,15 +165,10 @@ describe("POST /api/workspace/init", () => {
     expect(response.status).toBe(200);
 
     const workspaceDir = join(STATE_DIR, "workspace-work");
-    const expectedSkillPath = join(workspaceDir, "skills", "crm", "SKILL.md");
     const identityWrites = vi.mocked(writeFileSync).mock.calls.filter(
       (call) => String(call[0]).endsWith("IDENTITY.md"),
     );
     expect(identityWrites.length).toBeGreaterThan(0);
-    const raw = identityWrites[identityWrites.length - 1][1];
-    const identityContent = typeof raw === "string" ? raw : JSON.stringify(raw);
-    expect(identityContent).toContain(expectedSkillPath);
-    expect(identityContent).toContain("DenchClaw");
-    expect(identityContent).not.toContain("~skills");
+    expect(String(identityWrites[0][0])).toBe(join(workspaceDir, "IDENTITY.md"));
   });
 });

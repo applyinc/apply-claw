@@ -1,0 +1,8 @@
+{
+  "name": "@denchclaw/dench-identity",
+  "version": "1.0.0",
+  "private": true,
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  }
+}

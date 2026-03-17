@@ -1185,9 +1185,7 @@ describe("bootstrapCommand always-onboard behavior", () => {
     expect(summary.workspaceSeed?.reason).toBe("already-exists");
     expect(readFileSync(workspaceDbPath, "utf-8")).toBe("existing-db-content");
     const identityContent = readFileSync(identityPath, "utf-8");
-    expect(identityContent).toContain("You are **DenchClaw**");
-    expect(identityContent).toContain(path.join(workspaceDir, "skills", "crm", "SKILL.md"));
-    expect(identityContent).not.toContain("# stale identity");
+    expect(identityContent).toBe("# stale identity\n");
   });
 
   it("ignores custom config workspace and seeds the managed default workspace", async () => {
@@ -1226,11 +1224,7 @@ describe("bootstrapCommand always-onboard behavior", () => {
     expect(existsSync(path.join(managedWorkspace, "company", ".object.yaml"))).toBe(true);
     expect(existsSync(path.join(managedWorkspace, "task", ".object.yaml"))).toBe(true);
     expect(existsSync(path.join(managedWorkspace, "WORKSPACE.md"))).toBe(true);
-    const identityPath = path.join(managedWorkspace, "IDENTITY.md");
-    expect(existsSync(identityPath)).toBe(true);
-    const identityContent = readFileSync(identityPath, "utf-8");
-    expect(identityContent).toContain("You are **DenchClaw**");
-    expect(identityContent).toContain(path.join(managedWorkspace, "skills", "crm", "SKILL.md"));
+    expect(existsSync(path.join(managedWorkspace, "IDENTITY.md"))).toBe(false);
   });
 
   it("installs CRM skill into managed workspace skills directory (prevents state-root drift)", async () => {

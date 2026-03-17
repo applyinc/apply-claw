@@ -58,29 +58,14 @@ describe("seedWorkspaceFromAssets", () => {
     expect(existsSync(stateSkillPath)).toBe(false);
   });
 
-  it("generates IDENTITY.md referencing workspace CRM skill path (not virtual ~skills)", () => {
+  it("does not write IDENTITY.md (identity is injected via dench-identity plugin)", () => {
     const packageRoot = createPackageRoot(tempDir);
     const workspaceDir = path.join(tempDir, "workspace-test");
 
     seedWorkspaceFromAssets({ workspaceDir, packageRoot });
 
     const identityPath = path.join(workspaceDir, "IDENTITY.md");
-    expect(existsSync(identityPath)).toBe(true);
-
-    const identityContent = readFileSync(identityPath, "utf-8");
-    expect(identityContent).toContain("DenchClaw");
-    expect(identityContent).toContain(path.join(workspaceDir, "skills", "crm", "SKILL.md"));
-    expect(identityContent).not.toContain("~skills/crm/SKILL.md");
-  });
-
-  it("IDENTITY.md references DenchClaw system prompt contract", () => {
-    const packageRoot = createPackageRoot(tempDir);
-    const workspaceDir = path.join(tempDir, "workspace-contract");
-
-    seedWorkspaceFromAssets({ workspaceDir, packageRoot });
-
-    const identityContent = readFileSync(path.join(workspaceDir, "IDENTITY.md"), "utf-8");
-    expect(identityContent).toContain("DenchClaw system prompt contract");
+    expect(existsSync(identityPath)).toBe(false);
   });
 
   it("creates CRM object projection files on first seed", () => {
@@ -110,28 +95,27 @@ describe("seedWorkspaceFromAssets", () => {
     expect(readFileSync(path.join(workspaceDir, "workspace.duckdb"), "utf-8")).toBe("EXISTING_DB");
   });
 
-  it("always force-syncs IDENTITY.md even when workspace already exists (keeps updates current)", () => {
+  it("does not overwrite user IDENTITY.md when workspace already exists", () => {
     const packageRoot = createPackageRoot(tempDir);
     const workspaceDir = path.join(tempDir, "workspace-resync");
     mkdirSync(workspaceDir, { recursive: true });
     writeFileSync(path.join(workspaceDir, "workspace.duckdb"), "DB", "utf-8");
-    writeFileSync(path.join(workspaceDir, "IDENTITY.md"), "# stale identity\n", "utf-8");
+    writeFileSync(path.join(workspaceDir, "IDENTITY.md"), "# my custom identity\n", "utf-8");
 
     seedWorkspaceFromAssets({ workspaceDir, packageRoot });
 
     const identityContent = readFileSync(path.join(workspaceDir, "IDENTITY.md"), "utf-8");
-    expect(identityContent).toContain("DenchClaw");
-    expect(identityContent).not.toContain("# stale identity");
+    expect(identityContent).toBe("# my custom identity\n");
   });
 
-  it("includes skills/crm/SKILL.md in projection files list", () => {
+  it("includes skills/crm/SKILL.md in projection files list but not IDENTITY.md", () => {
     const packageRoot = createPackageRoot(tempDir);
     const workspaceDir = path.join(tempDir, "workspace-list");
 
     const result = seedWorkspaceFromAssets({ workspaceDir, packageRoot });
 
     expect(result.projectionFiles).toContain("skills/crm/SKILL.md");
-    expect(result.projectionFiles).toContain("IDENTITY.md");
+    expect(result.projectionFiles).not.toContain("IDENTITY.md");
   });
 });
 
@@ -153,20 +137,20 @@ describe("syncManagedSkills", () => {
     const result = syncManagedSkills({ workspaceDirs: [workspaceDir], packageRoot });
 
     expect(result.syncedSkills).toEqual(MANAGED_SKILLS.map((s) => s.name));
-    expect(result.identityUpdated).toBe(true);
+    expect(result.identityUpdated).toBe(false);
     const skillPath = path.join(workspaceDir, "skills", "crm", "SKILL.md");
     expect(existsSync(skillPath)).toBe(true);
   });
 
-  it("updates IDENTITY.md", () => {
+  it("does not write IDENTITY.md (identity is injected via plugin)", () => {
     const packageRoot = createPackageRoot(tempDir);
     const workspaceDir = path.join(tempDir, "workspace-identity");
 
-    syncManagedSkills({ workspaceDirs: [workspaceDir], packageRoot });
+    const result = syncManagedSkills({ workspaceDirs: [workspaceDir], packageRoot });
 
     const identityPath = path.join(workspaceDir, "IDENTITY.md");
-    expect(existsSync(identityPath)).toBe(true);
-    expect(readFileSync(identityPath, "utf-8")).toContain("DenchClaw");
+    expect(existsSync(identityPath)).toBe(false);
+    expect(result.identityUpdated).toBe(false);
   });
 
   it("overwrites stale skills with updated content", () => {
@@ -202,7 +186,6 @@ describe("syncManagedSkills", () => {
     expect(result.workspaceDirs).toEqual([wsA, wsB]);
     for (const ws of [wsA, wsB]) {
       expect(existsSync(path.join(ws, "skills", "crm", "SKILL.md"))).toBe(true);
-      expect(readFileSync(path.join(ws, "IDENTITY.md"), "utf-8")).toContain("DenchClaw");
     }
   });
 });
