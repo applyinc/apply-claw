@@ -62,6 +62,23 @@ export class PostHogClient {
     });
   }
 
+  identify(distinctId: string, properties: Record<string, unknown>): void {
+    this.queue.push({
+      event: "$identify",
+      distinct_id: distinctId,
+      properties: {
+        ...this.globalProperties,
+        $set: properties,
+        $lib: "denchclaw-posthog-plugin",
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    if (this.queue.length >= FLUSH_AT) {
+      this.flush();
+    }
+  }
+
   async shutdown(): Promise<void> {
     if (this.timer) {
       clearInterval(this.timer);

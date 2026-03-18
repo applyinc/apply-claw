@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { ThemeProvider } from "next-themes";
-import { getOrCreateAnonymousId } from "@/lib/telemetry";
+import { getOrCreateAnonymousId, readPersonInfo, readPrivacyMode } from "@/lib/telemetry";
 import { PostHogProvider } from "./components/posthog-provider";
 import "./globals.css";
 
@@ -25,6 +25,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   const anonymousId = getOrCreateAnonymousId();
+  const personInfo = readPersonInfo();
+  const privacyMode = readPrivacyMode();
 
   return (
     <html lang="en" suppressHydrationWarning>
@@ -43,7 +45,7 @@ export default function RootLayout({
       <body className="antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <Suspense fallback={null}>
-            <PostHogProvider anonymousId={anonymousId}>
+            <PostHogProvider anonymousId={anonymousId} personInfo={personInfo ?? undefined} privacyMode={privacyMode}>
               {children}
             </PostHogProvider>
           </Suspense>

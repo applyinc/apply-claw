@@ -23,7 +23,16 @@ function ensureClient(): PostHog | null {
   return client;
 }
 
+export type PersonInfo = {
+  name?: string;
+  email?: string;
+  avatar?: string;
+  denchOrgId?: string;
+};
+
 let _cachedAnonymousId: string | null = null;
+let _cachedPersonInfo: PersonInfo | null | undefined = undefined;
+let _cachedPrivacyMode: boolean | undefined = undefined;
 
 /**
  * Read the persisted install-scoped anonymous ID from ~/.openclaw-dench/telemetry.json,
@@ -57,6 +66,71 @@ export function getOrCreateAnonymousId(): string {
   }
 }
 
+/**
+ * Read optional person identity fields from telemetry.json.
+ * Returns null when no identity fields are set.
+ */
+export function readPersonInfo(): PersonInfo | null {
+  if (_cachedPersonInfo !== undefined) return _cachedPersonInfo;
+
+  try {
+    const stateDir = join(process.env.HOME || homedir(), ".openclaw-dench");
+    const configPath = join(stateDir, "telemetry.json");
+
+    if (!existsSync(configPath)) {
+      _cachedPersonInfo = null;
+      return null;
+    }
+    const raw = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
+    const info: PersonInfo = {};
+    if (typeof raw.name === "string" && raw.name) info.name = raw.name;
+    if (typeof raw.email === "string" && raw.email) info.email = raw.email;
+    if (typeof raw.avatar === "string" && raw.avatar) info.avatar = raw.avatar;
+    if (typeof raw.denchOrgId === "string" && raw.denchOrgId) info.denchOrgId = raw.denchOrgId;
+
+    _cachedPersonInfo = Object.keys(info).length > 0 ? info : null;
+    return _cachedPersonInfo;
+  } catch {
+    _cachedPersonInfo = null;
+    return null;
+  }
+}
+
+/**
+ * Read privacy mode from telemetry.json.
+ * Default is true (privacy on) when the file is missing or unreadable.
+ */
+export function readPrivacyMode(): boolean {
+  if (_cachedPrivacyMode !== undefined) return _cachedPrivacyMode;
+
+  try {
+    const stateDir = join(process.env.HOME || homedir(), ".openclaw-dench");
+    const configPath = join(stateDir, "telemetry.json");
+
+    if (!existsSync(configPath)) {
+      _cachedPrivacyMode = true;
+      return true;
+    }
+    const raw = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
+    _cachedPrivacyMode = raw.privacyMode !== false;
+    return _cachedPrivacyMode;
+  } catch {
+    _cachedPrivacyMode = true;
+    return true;
+  }
+}
+
+function personInfoToPostHogProps(person: PersonInfo): Record<string, string> {
+  const props: Record<string, string> = {};
+  if (person.name) props.$name = person.name;
+  if (person.email) props.$email = person.email;
+  if (person.avatar) props.$avatar = person.avatar;
+  if (person.denchOrgId) props.dench_org_id = person.denchOrgId;
+  return props;
+}
+
+let _identified = false;
+
 export function trackServer(
   event: string,
   properties?: Record<string, unknown>,
@@ -65,14 +139,26 @@ export function trackServer(
   const ph = ensureClient();
   if (!ph) return;
 
+  const id = distinctId || getOrCreateAnonymousId();
+
+  if (!_identified) {
+    _identified = true;
+    const person = readPersonInfo();
+    if (person) {
+      ph.identify({
+        distinctId: id,
+        properties: personInfoToPostHogProps(person),
+      });
+    }
+  }
+
   ph.capture({
-    distinctId: distinctId || getOrCreateAnonymousId(),
+    distinctId: id,
     event,
     properties: {
       ...properties,
       denchclaw_version: DENCHCLAW_VERSION || undefined,
       openclaw_version: OPENCLAW_VERSION || undefined,
-      $process_person_profile: false,
     },
   });
 }

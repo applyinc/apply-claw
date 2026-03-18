@@ -1,11 +1,13 @@
 import { PostHog } from "posthog-node";
-import { readTelemetryConfig, getOrCreateAnonymousId } from "./config.js";
+import { readTelemetryConfig, getOrCreateAnonymousId, readPersonInfo } from "./config.js";
+import type { PersonInfo } from "./config.js";
 import { VERSION, resolveOpenClawVersion } from "../version.js";
 
 const POSTHOG_KEY = process.env.POSTHOG_KEY || "";
 const POSTHOG_HOST = "https://us.i.posthog.com";
 
 let client: PostHog | null = null;
+let _identified = false;
 
 export function isTelemetryEnabled(): boolean {
   if (!POSTHOG_KEY) return false;
@@ -58,15 +60,36 @@ export function track(event: string, properties?: Record<string, unknown>): void
   const ph = ensureClient();
   if (!ph) return;
 
+  const distinctId = getOrCreateAnonymousId();
+
+  if (!_identified) {
+    _identified = true;
+    const person = readPersonInfo();
+    if (person) {
+      ph.identify({
+        distinctId,
+        properties: personInfoToPostHogProps(person),
+      });
+    }
+  }
+
   ph.capture({
-    distinctId: getOrCreateAnonymousId(),
+    distinctId,
     event,
     properties: {
       ...getMachineContext(),
       ...properties,
-      $process_person_profile: false,
     },
   });
+}
+
+function personInfoToPostHogProps(person: PersonInfo): Record<string, string> {
+  const props: Record<string, string> = {};
+  if (person.name) props.$name = person.name;
+  if (person.email) props.$email = person.email;
+  if (person.avatar) props.$avatar = person.avatar;
+  if (person.denchOrgId) props.dench_org_id = person.denchOrgId;
+  return props;
 }
 
 export async function shutdownTelemetry(): Promise<void> {

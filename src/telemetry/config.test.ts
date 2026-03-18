@@ -161,3 +161,167 @@ describe("writeTelemetryConfig preserves anonymousId", () => {
     expect(written.enabled).toBe(false);
   });
 });
+
+describe("readPersonInfo", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    mockExistsSync.mockReset();
+    mockReadFileSync.mockReset();
+  });
+
+  it("returns null when no identity fields are present", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({ enabled: true, anonymousId: "some-id" }),
+    );
+
+    const { readPersonInfo } = await import("./config.js");
+    expect(readPersonInfo()).toBeNull();
+  });
+
+  it("returns null when telemetry.json does not exist", async () => {
+    mockExistsSync.mockReturnValue(false);
+
+    const { readPersonInfo } = await import("./config.js");
+    expect(readPersonInfo()).toBeNull();
+  });
+
+  it("returns person info when name is set", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({ enabled: true, name: "Alice" }),
+    );
+
+    const { readPersonInfo } = await import("./config.js");
+    const info = readPersonInfo();
+    expect(info).toEqual({ name: "Alice" });
+  });
+
+  it("returns person info when email is set", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({ enabled: true, email: "alice@example.com" }),
+    );
+
+    const { readPersonInfo } = await import("./config.js");
+    const info = readPersonInfo();
+    expect(info).toEqual({ email: "alice@example.com" });
+  });
+
+  it("returns all identity fields when present", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        enabled: true,
+        name: "Alice",
+        email: "alice@example.com",
+        avatar: "https://example.com/avatar.png",
+        denchOrgId: "org-123",
+      }),
+    );
+
+    const { readPersonInfo } = await import("./config.js");
+    const info = readPersonInfo();
+    expect(info).toEqual({
+      name: "Alice",
+      email: "alice@example.com",
+      avatar: "https://example.com/avatar.png",
+      denchOrgId: "org-123",
+    });
+  });
+
+  it("ignores empty string identity fields", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({ enabled: true, name: "", email: "", denchOrgId: "org-1" }),
+    );
+
+    const { readPersonInfo } = await import("./config.js");
+    const info = readPersonInfo();
+    expect(info).toEqual({ denchOrgId: "org-1" });
+  });
+
+  it("ignores non-string identity fields", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({ enabled: true, name: 42, email: true }),
+    );
+
+    const { readPersonInfo } = await import("./config.js");
+    expect(readPersonInfo()).toBeNull();
+  });
+});
+
+describe("readTelemetryConfig includes identity fields", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    mockExistsSync.mockReset();
+    mockReadFileSync.mockReset();
+  });
+
+  it("parses name, email, avatar, and denchOrgId from config", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        enabled: true,
+        name: "Bob",
+        email: "bob@test.com",
+        avatar: "https://img.test/bob.jpg",
+        denchOrgId: "org-abc",
+      }),
+    );
+
+    const { readTelemetryConfig } = await import("./config.js");
+    const config = readTelemetryConfig();
+
+    expect(config.name).toBe("Bob");
+    expect(config.email).toBe("bob@test.com");
+    expect(config.avatar).toBe("https://img.test/bob.jpg");
+    expect(config.denchOrgId).toBe("org-abc");
+  });
+
+  it("returns undefined for missing identity fields", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(JSON.stringify({ enabled: true }));
+
+    const { readTelemetryConfig } = await import("./config.js");
+    const config = readTelemetryConfig();
+
+    expect(config.name).toBeUndefined();
+    expect(config.email).toBeUndefined();
+    expect(config.avatar).toBeUndefined();
+    expect(config.denchOrgId).toBeUndefined();
+  });
+});
+
+describe("writeTelemetryConfig preserves identity fields", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    mockExistsSync.mockReset();
+    mockReadFileSync.mockReset();
+    mockWriteFileSync.mockReset();
+    mockMkdirSync.mockReset();
+  });
+
+  it("does not lose identity fields when writing unrelated config changes", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      JSON.stringify({
+        enabled: true,
+        anonymousId: "id-1",
+        name: "Alice",
+        email: "alice@test.com",
+        denchOrgId: "org-x",
+      }),
+    );
+
+    const { writeTelemetryConfig } = await import("./config.js");
+    writeTelemetryConfig({ privacyMode: false });
+
+    const written = JSON.parse(mockWriteFileSync.mock.calls[0][1]);
+    expect(written.name).toBe("Alice");
+    expect(written.email).toBe("alice@test.com");
+    expect(written.denchOrgId).toBe("org-x");
+    expect(written.privacyMode).toBe(false);
+  });
+});

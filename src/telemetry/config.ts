@@ -8,6 +8,17 @@ type TelemetryConfig = {
   noticeShown?: boolean;
   privacyMode?: boolean;
   anonymousId?: string;
+  name?: string;
+  email?: string;
+  avatar?: string;
+  denchOrgId?: string;
+};
+
+export type PersonInfo = {
+  name?: string;
+  email?: string;
+  avatar?: string;
+  denchOrgId?: string;
 };
 
 const TELEMETRY_FILENAME = "telemetry.json";
@@ -28,6 +39,10 @@ export function readTelemetryConfig(): TelemetryConfig {
       noticeShown: raw.noticeShown === true,
       privacyMode: raw.privacyMode !== false,
       anonymousId: typeof raw.anonymousId === "string" ? raw.anonymousId : undefined,
+      name: typeof raw.name === "string" && raw.name ? raw.name : undefined,
+      email: typeof raw.email === "string" && raw.email ? raw.email : undefined,
+      avatar: typeof raw.avatar === "string" && raw.avatar ? raw.avatar : undefined,
+      denchOrgId: typeof raw.denchOrgId === "string" && raw.denchOrgId ? raw.denchOrgId : undefined,
     };
   } catch {
     return { enabled: true };
@@ -53,6 +68,23 @@ export function markNoticeShown(): void {
 export function isPrivacyModeEnabled(): boolean {
   const config = readTelemetryConfig();
   return config.privacyMode !== false;
+}
+
+/**
+ * Read optional person identity fields from telemetry.json.
+ * Returns null when no identity fields are set.
+ */
+export function readPersonInfo(): PersonInfo | null {
+  const config = readTelemetryConfig();
+  if (!config.name && !config.email && !config.avatar && !config.denchOrgId) {
+    return null;
+  }
+  const info: PersonInfo = {};
+  if (config.name) info.name = config.name;
+  if (config.email) info.email = config.email;
+  if (config.avatar) info.avatar = config.avatar;
+  if (config.denchOrgId) info.denchOrgId = config.denchOrgId;
+  return info;
 }
 
 let _cachedAnonymousId: string | null = null;

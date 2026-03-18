@@ -1,7 +1,7 @@
 import { createPostHogClient, shutdownPostHogClient } from "./lib/posthog-client.js";
 import { TraceContextManager, resolveSessionKey } from "./lib/trace-context.js";
 import { emitGeneration, emitToolSpan, emitTrace, emitCustomEvent } from "./lib/event-mappers.js";
-import { readPrivacyMode } from "./lib/privacy.js";
+import { readPrivacyMode, readPersonInfo, readOrCreateAnonymousId } from "./lib/privacy.js";
 import {
   POSTHOG_KEY as BUILT_IN_KEY,
   DENCHCLAW_VERSION,
@@ -41,6 +41,17 @@ export default function register(api: any) {
 
   const ph = createPostHogClient(apiKey, config?.host, versionProps);
   const traceCtx = new TraceContextManager();
+
+  const person = readPersonInfo(api.config);
+  if (person) {
+    const distinctId = readOrCreateAnonymousId(api.config);
+    const props: Record<string, string> = {};
+    if (person.name) props.$name = person.name;
+    if (person.email) props.$email = person.email;
+    if (person.avatar) props.$avatar = person.avatar;
+    if (person.denchOrgId) props.dench_org_id = person.denchOrgId;
+    ph.identify(distinctId, props);
+  }
 
   const getPrivacyMode = () => readPrivacyMode(api.config);
 

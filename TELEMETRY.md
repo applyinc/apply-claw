@@ -50,6 +50,25 @@ The ID is:
 - **Install-scoped** — deleting `~/.openclaw-dench` resets it.
 - **Inspectable** — run `npx denchclaw telemetry status` to see your current ID.
 
+### Optional identity fields
+
+`telemetry.json` also supports optional identity fields. By default all are
+empty and the install remains anonymous. When any field is populated, a PostHog
+person profile is created with those properties:
+
+| Field | PostHog property | Description |
+| --- | --- | --- |
+| `name` | `$name` | Display name shown in PostHog |
+| `email` | `$email` | Email address |
+| `avatar` | `$avatar` | Avatar URL |
+| `denchOrgId` | `dench_org_id` | Dench Cloud organization ID (set automatically by Dench Cloud) |
+
+These fields are **never written automatically** by the open-source CLI or web
+app. They are only populated when:
+
+- A user manually edits `~/.openclaw-dench/telemetry.json`, or
+- Dench Cloud provisions the install and writes `denchOrgId`.
+
 ---
 
 ## AI Observability
@@ -138,7 +157,8 @@ blocked.
 - IP addresses (PostHog is configured to discard them)
 - Environment variable values
 - Error stack traces or logs
-- Any personally identifiable information (PII)
+- Any personally identifiable information (PII) — unless you explicitly write
+  `name`, `email`, or `avatar` into `telemetry.json`
 
 ---
 

@@ -395,10 +395,7 @@ export function emitCustomEvent(
     ph.capture({
       distinctId: readOrCreateAnonymousId(),
       event: eventName,
-      properties: {
-        ...properties,
-        $process_person_profile: false,
-      },
+      properties: properties ?? {},
     });
   } catch {
     // Fail silently.

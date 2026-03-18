@@ -30,6 +30,43 @@ export function readPrivacyMode(openclawConfig?: any): boolean {
   }
 }
 
+export type PersonInfo = {
+  name?: string;
+  email?: string;
+  avatar?: string;
+  denchOrgId?: string;
+};
+
+let _cachedPersonInfo: PersonInfo | null | undefined = undefined;
+
+/**
+ * Read optional person identity fields from telemetry.json.
+ * Returns null when no identity fields are set.
+ */
+export function readPersonInfo(openclawConfig?: any): PersonInfo | null {
+  if (_cachedPersonInfo !== undefined) return _cachedPersonInfo;
+
+  try {
+    const configPath = resolveConfigPath(openclawConfig);
+    if (!existsSync(configPath)) {
+      _cachedPersonInfo = null;
+      return null;
+    }
+    const raw = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
+    const info: PersonInfo = {};
+    if (typeof raw.name === "string" && raw.name) info.name = raw.name;
+    if (typeof raw.email === "string" && raw.email) info.email = raw.email;
+    if (typeof raw.avatar === "string" && raw.avatar) info.avatar = raw.avatar;
+    if (typeof raw.denchOrgId === "string" && raw.denchOrgId) info.denchOrgId = raw.denchOrgId;
+
+    _cachedPersonInfo = Object.keys(info).length > 0 ? info : null;
+    return _cachedPersonInfo;
+  } catch {
+    _cachedPersonInfo = null;
+    return null;
+  }
+}
+
 let _cachedAnonymousId: string | null = null;
 
 /**
