@@ -710,6 +710,22 @@ function stagePreOnboardConfig(
   gateway.port = params.gatewayPort;
   raw.gateway = gateway;
 
+  const tools = { ...(asRecord(raw.tools) ?? {}) };
+  const elevated = { ...(asRecord(tools.elevated) ?? {}) };
+  elevated.enabled = true;
+  const allowFrom = { ...(asRecord(elevated.allowFrom) ?? {}) };
+  allowFrom.webchat = ["*"];
+  elevated.allowFrom = allowFrom;
+  tools.elevated = elevated;
+  raw.tools = tools;
+
+  const commands = { ...(asRecord(raw.commands) ?? {}) };
+  commands.bash = true;
+  commands.config = true;
+  raw.commands = commands;
+
+  defaults.elevatedDefault = "on";
+
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(
     path.join(stateDir, "openclaw.json"),
@@ -732,6 +748,11 @@ async function ensureAgentDefaults(openclawCommand: string, profile: string): Pr
     ["agents.defaults.subagents.archiveAfterMinutes", "180"],
     ["agents.defaults.subagents.runTimeoutSeconds", "0"],
     ["tools.subagents.tools.deny", "[]"],
+    ["tools.elevated.enabled", "true"],
+    ["tools.elevated.allowFrom.webchat", '["*"]'],
+    ["agents.defaults.elevatedDefault", "on"],
+    ["commands.bash", "true"],
+    ["commands.config", "true"],
   ];
   for (const [key, value] of settings) {
     await runOpenClawOrThrow({

@@ -1722,6 +1722,159 @@ describe("bootstrapCommand always-onboard behavior", () => {
     expect(logMessages).toContain("gateway.err.log");
   });
 
+  it("stages elevated commands config in raw JSON before onboard (webchat gets host exec from first boot)", async () => {
+    const runtime: RuntimeEnv = {
+      log: vi.fn(),
+      error: vi.fn(),
+      exit: vi.fn(),
+    };
+
+    await bootstrapCommand(
+      {
+        nonInteractive: true,
+        noOpen: true,
+        skipUpdate: true,
+      },
+      runtime,
+    );
+
+    const configPath = path.join(stateDir, "openclaw.json");
+    const config = JSON.parse(readFileSync(configPath, "utf-8"));
+    expect(config.tools?.elevated?.enabled).toBe(true);
+    expect(config.tools?.elevated?.allowFrom?.webchat).toEqual(["*"]);
+    expect(config.commands?.bash).toBe(true);
+    expect(config.commands?.config).toBe(true);
+    expect(config.agents?.defaults?.elevatedDefault).toBe("on");
+
+    const onboardIndex = spawnCalls.findIndex(
+      (c) => c.command === "openclaw" && c.args.includes("onboard"),
+    );
+    const preOnboardElevatedCliSet = spawnCalls.findIndex((call, index) => {
+      return (
+        index < onboardIndex &&
+        call.command === "openclaw" &&
+        call.args.includes("config") &&
+        call.args.includes("set") &&
+        call.args.includes("tools.elevated.enabled")
+      );
+    });
+    expect(preOnboardElevatedCliSet).toBe(-1);
+  });
+
+  it("applies elevated commands via CLI after onboard (prevents onboard wizard drift)", async () => {
+    const runtime: RuntimeEnv = {
+      log: vi.fn(),
+      error: vi.fn(),
+      exit: vi.fn(),
+    };
+
+    await bootstrapCommand(
+      {
+        nonInteractive: true,
+        noOpen: true,
+        skipUpdate: true,
+      },
+      runtime,
+    );
+
+    const onboardIndex = spawnCalls.findIndex(
+      (call) => call.command === "openclaw" && call.args.includes("onboard"),
+    );
+    expect(onboardIndex).toBeGreaterThan(-1);
+
+    const elevatedSettings = [
+      { key: "tools.elevated.enabled", value: "true" },
+      { key: "tools.elevated.allowFrom.webchat", value: '["*"]' },
+      { key: "agents.defaults.elevatedDefault", value: "on" },
+      { key: "commands.bash", value: "true" },
+      { key: "commands.config", value: "true" },
+    ];
+
+    for (const { key, value } of elevatedSettings) {
+      const postOnboardSetCall = spawnCalls.find(
+        (call, index) =>
+          index > onboardIndex &&
+          call.command === "openclaw" &&
+          call.args.includes("config") &&
+          call.args.includes("set") &&
+          call.args.includes(key) &&
+          call.args.includes(value),
+      );
+      expect(postOnboardSetCall, `expected post-onboard config set for ${key}=${value}`).toBeDefined();
+      expect(postOnboardSetCall?.args).toEqual(
+        expect.arrayContaining(["--profile", "dench", "config", "set", key, value]),
+      );
+    }
+  });
+
+  it("reapplies elevated commands on repeated bootstrap runs (idempotent safety)", async () => {
+    const runtime: RuntimeEnv = {
+      log: vi.fn(),
+      error: vi.fn(),
+      exit: vi.fn(),
+    };
+
+    await bootstrapCommand(
+      {
+        nonInteractive: true,
+        noOpen: true,
+        skipUpdate: true,
+      },
+      runtime,
+    );
+    await bootstrapCommand(
+      {
+        nonInteractive: true,
+        noOpen: true,
+        skipUpdate: true,
+      },
+      runtime,
+    );
+
+    const elevatedEnabledCalls = spawnCalls.filter(
+      (call) =>
+        call.command === "openclaw" &&
+        call.args.includes("config") &&
+        call.args.includes("set") &&
+        call.args.includes("tools.elevated.enabled"),
+    );
+
+    expect(elevatedEnabledCalls).toHaveLength(2);
+    for (const call of elevatedEnabledCalls) {
+      expect(call.args).toEqual(
+        expect.arrayContaining(["--profile", "dench", "config", "set", "tools.elevated.enabled", "true"]),
+      );
+    }
+  });
+
+  it("preserves elevated config in final openclaw.json after full bootstrap cycle", async () => {
+    const runtime: RuntimeEnv = {
+      log: vi.fn(),
+      error: vi.fn(),
+      exit: vi.fn(),
+    };
+
+    await bootstrapCommand(
+      {
+        nonInteractive: true,
+        noOpen: true,
+        skipUpdate: true,
+      },
+      runtime,
+    );
+
+    const configPath = path.join(stateDir, "openclaw.json");
+    const finalConfig = JSON.parse(readFileSync(configPath, "utf-8"));
+
+    expect(finalConfig.tools?.elevated?.enabled).toBe(true);
+    expect(finalConfig.tools?.elevated?.allowFrom?.webchat).toEqual(["*"]);
+    expect(finalConfig.agents?.defaults?.elevatedDefault).toBe("on");
+    expect(finalConfig.commands?.bash).toBe(true);
+    expect(finalConfig.commands?.config).toBe(true);
+    expect(finalConfig.agents?.defaults?.timeoutSeconds).toBe(86400);
+    expect(finalConfig.tools?.profile).toBe("full");
+  });
+
   it("strips npm_config_* env vars from npm global commands (prevents npx prefix hijack)", async () => {
     process.env.npm_config_prefix = "/tmp/npx-fake-prefix";
     process.env.npm_config_global_prefix = "/tmp/npx-fake-global";
