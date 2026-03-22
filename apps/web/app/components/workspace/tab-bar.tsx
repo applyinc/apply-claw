@@ -144,26 +144,21 @@ export function TabBar({
             onTabClose={handleClose}
             onTabReorder={handleReorder}
             onContextMenu={handleContextMenu}
-            pinnedRight={onNewTab ? (
-              <div className="flex items-center gap-1.5 ml-1.5">
-                {nonHomeTabs.length > 0 && nonHomeTabs[nonHomeTabs.length - 1].id !== activeTabId && (
-                  <div className="w-px h-4 shrink-0" style={{ background: "var(--color-border)" }} />
-                )}
-                <button
-                  type="button"
-                  onClick={onNewTab}
-                  className="flex items-center justify-center w-7 h-7 rounded-full shrink-0 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                  style={{ color: "var(--color-text-muted)" }}
-                  title="New chat"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 5v14" /><path d="M5 12h14" />
-                  </svg>
-                </button>
-              </div>
-            ) : undefined}
           />
         </div>
+        {onNewTab && (
+          <button
+            type="button"
+            onClick={onNewTab}
+            className="flex items-center justify-center w-7 h-7 rounded-full shrink-0 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+            style={{ color: "var(--color-text-muted)" }}
+            title="New chat"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 5v14" /><path d="M5 12h14" />
+            </svg>
+          </button>
+        )}
         {rightContent && (
           <div className="flex items-center gap-0.5 px-2 shrink-0 z-10">
             {rightContent}
