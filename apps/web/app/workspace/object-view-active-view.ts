@@ -37,6 +37,7 @@ export type ActiveViewSyncDecision = {
   shouldApply: boolean;
   nextFilters: FilterGroup;
   nextColumns: string[] | undefined;
+  nextColumnWidths: Record<string, number> | undefined;
   nextActiveViewName: string;
   nextViewType: ViewType | undefined;
   nextSettings: ViewTypeSettings | undefined;
@@ -48,6 +49,7 @@ export function resolveActiveViewSyncDecision(params: {
   currentActiveViewName: string | undefined;
   currentFilters: FilterGroup;
   currentViewColumns: string[] | undefined;
+  currentColumnWidths: Record<string, number> | undefined;
   currentViewType?: ViewType;
   currentSettings?: ViewTypeSettings;
 }): ActiveViewSyncDecision | null {
@@ -59,6 +61,7 @@ export function resolveActiveViewSyncDecision(params: {
 
   const nextFilters = view.filters ?? emptyFilterGroup();
   const nextColumns = view.columns;
+  const nextColumnWidths = view.column_widths;
   const nextActiveViewName = view.name;
   const nextViewType = view.view_type;
   const nextSettings = view.settings;
@@ -73,6 +76,7 @@ export function resolveActiveViewSyncDecision(params: {
     shouldApply: nameMismatch || filterMismatch || columnMismatch || viewTypeMismatch || settingsMismatch,
     nextFilters,
     nextColumns,
+    nextColumnWidths,
     nextActiveViewName,
     nextViewType,
     nextSettings,

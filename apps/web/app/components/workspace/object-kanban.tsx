@@ -15,6 +15,8 @@ import {
 } from "@dnd-kit/core";
 import { formatWorkspaceFieldValue } from "@/lib/workspace-cell-format";
 import { parseTagsValue } from "@/lib/parse-tags";
+import { ActionButton, type ActionConfig } from "./action-button";
+import { useToast } from "./toast";
 
 type Field = {
   id: string;
@@ -23,6 +25,7 @@ type Field = {
   enum_values?: string[];
   enum_colors?: string[];
   related_object_name?: string;
+  default_value?: string;
 };
 
 type Status = {
@@ -88,12 +91,16 @@ function DraggableCard({
   members,
   relationLabels,
   onEntryClick,
+  objectName,
+  onToast,
 }: {
   entry: Record<string, unknown>;
   fields: Field[];
   members?: Array<{ id: string; name: string }>;
   relationLabels?: Record<string, Record<string, string>>;
   onEntryClick?: (entryId: string) => void;
+  objectName?: string;
+  onToast?: (message: string, opts?: { type?: "success" | "error" | "info" }) => void;
 }) {
   const entryId = safeString(entry.entry_id) || "";
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -126,6 +133,8 @@ function DraggableCard({
         fields={fields}
         members={members}
         relationLabels={relationLabels}
+        objectName={objectName}
+        onToast={onToast}
       />
     </div>
   );
@@ -133,20 +142,36 @@ function DraggableCard({
 
 // --- Card content (shared between draggable + overlay) ---
 
+function parseActionConfig(defaultValue: string | null | undefined): ActionConfig[] {
+  if (!defaultValue) return [];
+  try {
+    const parsed = JSON.parse(defaultValue);
+    if (parsed && Array.isArray(parsed.actions)) return parsed.actions;
+  } catch { /* ignore */ }
+  return [];
+}
+
 function CardContent({
   entry,
   fields,
   members,
   relationLabels,
+  objectName,
+  onToast,
 }: {
   entry: Record<string, unknown>;
   fields: Field[];
   members?: Array<{ id: string; name: string }>;
   relationLabels?: Record<string, Record<string, string>>;
+  objectName?: string;
+  onToast?: (message: string, opts?: { type?: "success" | "error" | "info" }) => void;
 }) {
   const title = getEntryTitle(entry, fields);
 
-  const displayFields = fields
+  const actionFields = fields.filter((f) => f.type === "action");
+  const dataFields = fields.filter((f) => f.type !== "action");
+
+  const displayFields = dataFields
     .filter(
       (f) =>
         f.type !== "richtext" &&
@@ -267,6 +292,23 @@ function CardContent({
             );
           })}
       </div>
+      {objectName && actionFields.length > 0 && (
+        <div className="flex items-center gap-1 mt-2 pt-1.5" style={{ borderTop: "1px solid var(--color-border)" }} onClick={(e) => e.stopPropagation()}>
+          {actionFields.flatMap((af) =>
+            parseActionConfig(af.default_value).map((action) => (
+              <ActionButton
+                key={`${af.id}_${action.id}`}
+                action={action}
+                entryId={String(entry.entry_id ?? "")}
+                objectName={objectName}
+                fieldId={af.id}
+                compact
+                onToast={onToast}
+              />
+            )),
+          )}
+        </div>
+      )}
     </>
   );
 }
@@ -310,6 +352,7 @@ function DroppableColumn({
   groupFieldId,
   objectName,
   onRefresh,
+  onToast,
 }: {
   columnName: string;
   color: string;
@@ -322,6 +365,7 @@ function DroppableColumn({
   groupFieldId?: string;
   objectName: string;
   onRefresh?: () => void;
+  onToast?: (message: string, opts?: { type?: "success" | "error" | "info" }) => void;
 }) {
   const { setNodeRef } = useDroppable({ id: `column:${columnName}` });
   const [editingName, setEditingName] = useState(false);
@@ -453,6 +497,8 @@ function DroppableColumn({
               members={members}
               relationLabels={relationLabels}
               onEntryClick={onEntryClick}
+              objectName={objectName}
+              onToast={onToast}
             />
           ))
         )}
@@ -473,6 +519,7 @@ export function ObjectKanban({
   onEntryClick,
   onRefresh,
 }: ObjectKanbanProps) {
+  const showToast = useToast();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overColumnId, setOverColumnId] = useState<string | null>(null);
   // Optimistic local entries for instant drag feedback
@@ -666,6 +713,7 @@ export function ObjectKanban({
             groupFieldId={groupField.id}
             objectName={objectName}
             onRefresh={onRefresh}
+            onToast={showToast}
           />
         ))}
 
@@ -708,6 +756,8 @@ export function ObjectKanban({
                   members={members}
                   relationLabels={relationLabels}
                   onEntryClick={onEntryClick}
+                  objectName={objectName}
+                  onToast={showToast}
                 />
               ))}
             </div>
@@ -731,7 +781,9 @@ export function ObjectKanban({
               entry={activeEntry}
               fields={cardFields}
               members={members}
+              objectName={objectName}
               relationLabels={relationLabels}
+              onToast={showToast}
             />
           </div>
         ) : null}

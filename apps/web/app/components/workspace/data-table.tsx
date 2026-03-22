@@ -12,6 +12,8 @@ import {
 	type SortingState,
 	type ColumnFiltersState,
 	type VisibilityState,
+	type ColumnSizingState,
+	type Table,
 	type Row,
 	type OnChangeFn,
 	type PaginationState,
@@ -44,6 +46,8 @@ import { cn } from "@/lib/utils";
 
 /* ─── Types ─── */
 
+export type { ColumnSizingState } from "@tanstack/react-table";
+
 export type RowAction<TData> = {
 	label: string;
 	onClick?: (row: TData) => void;
@@ -70,6 +74,8 @@ export type DataTableProps<TData, TValue> = {
 	onColumnReorder?: (newOrder: string[]) => void;
 	initialColumnVisibility?: VisibilityState;
 	onColumnVisibilityChanged?: (visibility: VisibilityState) => void;
+	initialColumnSizing?: ColumnSizingState;
+	onColumnSizingChange?: (sizing: ColumnSizingState) => void;
 	// pagination
 	pageSize?: number;
 	// actions
@@ -84,6 +90,9 @@ export type DataTableProps<TData, TValue> = {
 	titleIcon?: React.ReactNode;
 	// sticky
 	stickyFirstColumn?: boolean;
+	// active row highlight
+	activeRowId?: string;
+	getRowId?: (row: TData) => string;
 	// server-side pagination
 	serverPagination?: {
 		totalCount: number;
@@ -116,7 +125,7 @@ function SortableHeader({
 	className,
 }: {
 	id: string;
-	children: React.ReactNode;
+	children: (dragListeners: ReturnType<typeof useSortable>["listeners"]) => React.ReactNode;
 	style?: React.CSSProperties;
 	className?: string;
 }) {
@@ -134,7 +143,6 @@ function SortableHeader({
 		transform: CSS.Translate.toString(transform),
 		transition,
 		opacity: isDragging ? 0.5 : 1,
-		cursor: "grab",
 	};
 
 	return (
@@ -143,9 +151,8 @@ function SortableHeader({
 			style={dragStyle}
 			className={className}
 			{...attributes}
-			{...listeners}
 		>
-			{children}
+			{children(listeners)}
 		</th>
 	);
 }
@@ -184,6 +191,8 @@ export function DataTable<TData, TValue>({
 	onColumnReorder,
 	initialColumnVisibility,
 	onColumnVisibilityChanged,
+	initialColumnSizing,
+	onColumnSizingChange,
 	pageSize: defaultPageSize = 100,
 	onRefresh,
 	onAdd,
@@ -194,6 +203,8 @@ export function DataTable<TData, TValue>({
 	title,
 	titleIcon,
 	stickyFirstColumn: stickyFirstProp = true,
+	activeRowId,
+	getRowId,
 	serverPagination,
 	onServerSearch,
 }: DataTableProps<TData, TValue>) {
@@ -201,10 +212,14 @@ export function DataTable<TData, TValue>({
 	const [globalFilter, setGlobalFilter] = useState("");
 	const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
 	const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(initialColumnVisibility ?? {});
+	const [columnSizing, setColumnSizing] = useState<ColumnSizingState>(initialColumnSizing ?? {});
 	// Sync column visibility when the prop changes (e.g. loading a saved view)
 	useEffect(() => {
 		setColumnVisibility(initialColumnVisibility ?? {});
 	}, [initialColumnVisibility]);
+	useEffect(() => {
+		setColumnSizing(initialColumnSizing ?? {});
+	}, [initialColumnSizing]);
 	const [internalRowSelection, setInternalRowSelection] = useState<Record<string, boolean>>({});
 	const [stickyFirstColumn, setStickyFirstColumn] = useState(stickyFirstProp);
 	const [isScrolled, setIsScrolled] = useState(false);
@@ -238,9 +253,27 @@ export function DataTable<TData, TValue>({
 		buildColumnOrder(columns),
 	);
 
-	// Update column order when columns change
+	const FIXED_COL_IDS = new Set(["select", "actions", "__add_column"]);
+
+	// Reconcile column order when columns change (preserves user DnD ordering)
 	useEffect(() => {
-		setColumnOrder(buildColumnOrder(columns));
+		setColumnOrder((prevOrder) => {
+			const freshOrder = buildColumnOrder(columns);
+			const freshSet = new Set(freshOrder);
+			const freshDataIds = new Set(freshOrder.filter((id) => !FIXED_COL_IDS.has(id)));
+			const prevDataOrder = prevOrder.filter((id) => !FIXED_COL_IDS.has(id) && freshDataIds.has(id));
+			const existingDataSet = new Set(prevDataOrder);
+			for (const id of freshDataIds) {
+				if (!existingDataSet.has(id)) prevDataOrder.push(id);
+			}
+			const result: string[] = [];
+			if (freshSet.has("select")) result.push("select");
+			result.push(...prevDataOrder);
+			if (freshSet.has("actions")) result.push("actions");
+			if (freshSet.has("__add_column")) result.push("__add_column");
+			if (result.length === prevOrder.length && result.every((id, i) => id === prevOrder[i])) return prevOrder;
+			return result;
+		});
 	}, [columns, buildColumnOrder]);
 
 	// DnD sensors
@@ -326,6 +359,8 @@ export function DataTable<TData, TValue>({
 		? { pageIndex: serverPagination.page - 1, pageSize: serverPagination.pageSize }
 		: undefined;
 
+	const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 	const table = useReactTable({
 		data,
 		columns: allColumns,
@@ -334,6 +369,7 @@ export function DataTable<TData, TValue>({
 			globalFilter,
 			columnFilters,
 			columnVisibility,
+			columnSizing,
 			rowSelection: rowSelectionState,
 			columnOrder: enableColumnReordering ? columnOrder : undefined,
 			pagination: serverPaginationState ?? pagination,
@@ -345,6 +381,12 @@ export function DataTable<TData, TValue>({
 			const next = typeof updater === "function" ? updater(columnVisibility) : updater;
 			setColumnVisibility(next);
 			onColumnVisibilityChanged?.(next);
+		},
+		onColumnSizingChange: (updater) => {
+			const next = typeof updater === "function" ? updater(columnSizing) : updater;
+			setColumnSizing(next);
+			if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current);
+			resizeTimerRef.current = setTimeout(() => onColumnSizingChange?.(next), 500);
 		},
 		onRowSelectionChange: (updater) => {
 			if (onRowSelectionChange) {
@@ -380,7 +422,19 @@ export function DataTable<TData, TValue>({
 	});
 
 	const selectedCount = Object.keys(rowSelectionState).filter((k) => rowSelectionState[k]).length;
-	const visibleColumns = table.getVisibleFlatColumns().filter((c) => c.id !== "select" && c.id !== "actions");
+	const visibleColumns = table.getVisibleFlatColumns().filter((c) => c.id !== "select" && c.id !== "actions" && c.id !== "__add_column");
+
+	// Column sizes as CSS variables for performant resize (TanStack recommended approach).
+	// Only th elements reference these vars; td widths are inherited via table-layout:fixed.
+	const columnSizeVars = useMemo(() => {
+		const headers = table.getFlatHeaders();
+		const vars: Record<string, number> = {};
+		for (const header of headers) {
+			vars[`--header-${header.id}-size`] = header.getSize();
+			vars[`--col-${header.column.id}-size`] = header.column.getSize();
+		}
+		return vars;
+	}, [table.getState().columnSizingInfo, table.getState().columnSizing]); // eslint-disable-line react-hooks/exhaustive-deps
 
 	// ─── Render ───
 
@@ -470,7 +524,7 @@ export function DataTable<TData, TValue>({
 							<div className="px-2 py-1.5 text-xs opacity-50">No toggleable columns</div>
 						) : (
 							table.getAllLeafColumns()
-								.filter((c) => c.id !== "select" && c.id !== "actions" && c.getCanHide())
+								.filter((c) => c.id !== "select" && c.id !== "actions" && c.id !== "__add_column" && c.getCanHide())
 								.map((column) => (
 									<DropdownMenuCheckboxItem
 										key={column.id}
@@ -546,7 +600,7 @@ export function DataTable<TData, TValue>({
 					<DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
 						<table
 							className="w-full caption-bottom text-sm"
-							style={{ tableLayout: "fixed", minWidth: table.getCenterTotalSize() }}
+							style={{ ...columnSizeVars, tableLayout: "fixed", minWidth: table.getTotalSize() }}
 						>
 							<thead className="[&_tr]:border-b sticky top-0 z-30" style={{ background: "var(--color-surface)" }}>
 								{table.getHeaderGroups().map((headerGroup) => (
@@ -555,12 +609,13 @@ export function DataTable<TData, TValue>({
 										style={{ borderColor: "var(--color-border)" }}
 										className="border-b-2 backdrop-blur-sm"
 									>
-										<SortableContext items={columnOrder} strategy={horizontalListSortingStrategy}>
+										<SortableContext items={columnOrder.filter((id) => !FIXED_COL_IDS.has(id))} strategy={horizontalListSortingStrategy}>
 											{headerGroup.headers.map((header, colIdx) => {
 												const isFirstData = colIdx === (enableRowSelection ? 1 : 0);
 												const isSticky = stickyFirstColumn && isFirstData;
 												const isSelectCol = header.id === "select";
 												const isActionsCol = header.id === "actions";
+												const isAddCol = header.id === "__add_column";
 												const canSort = header.column.getCanSort();
 												const isSorted = header.column.getIsSorted();
 												const isLastCol = colIdx === headerGroup.headers.length - 1;
@@ -575,7 +630,7 @@ export function DataTable<TData, TValue>({
 														boxShadow: isScrolled ? "4px 0 12px -2px rgba(0,0,0,0.15), 2px 0 4px -1px rgba(0,0,0,0.08)" : "none",
 													} : {}),
 													...(isSelectCol ? { left: 0, position: "sticky", zIndex: 31, width: 40 } : {}),
-													width: header.getSize(),
+													width: `calc(var(--header-${header.id}-size) * 1px)`,
 												};
 
 												const content = header.isPlaceholder
@@ -594,145 +649,86 @@ export function DataTable<TData, TValue>({
 													isSorted && "bg-[var(--color-surface-hover)]",
 												);
 
-												if (enableColumnReordering && !isSelectCol && !isActionsCol) {
-													return (
-														<SortableHeader
-															key={header.id}
-															id={header.id}
-															style={headerStyle}
-															className={thClassName}
-														>
-															<span
-																className={innerClassName}
-																onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-																style={{ color: "var(--color-text-muted)" }}
-															>
-																{content}
-																{canSort && <SortIcon direction={isSorted} />}
-															</span>
-															{isSticky && isScrolled && (
-																<div className="absolute top-0 right-0 bottom-0 w-4 translate-x-full pointer-events-none bg-linear-to-r from-black/4 to-transparent z-100" />
-															)}
-														</SortableHeader>
-													);
-												}
+											const resizeHandle = !isSelectCol && !isAddCol && header.column.getCanResize() ? (
+												<div
+													data-resize-handle
+													onMouseDown={header.getResizeHandler()}
+													onTouchStart={header.getResizeHandler()}
+													onDoubleClick={() => header.column.resetSize()}
+													onClick={(e) => e.stopPropagation()}
+													className={cn(
+														"dt-resize-handle",
+														header.column.getIsResizing() && "dt-resize-active",
+													)}
+												/>
+											) : null;
 
+											if (enableColumnReordering && !isSelectCol && !isActionsCol && !isAddCol) {
 												return (
-													<th
+													<SortableHeader
 														key={header.id}
-														style={{
-															...headerStyle,
-															borderColor: "var(--color-border)",
-														}}
+														id={header.id}
+														style={headerStyle}
 														className={thClassName}
 													>
-														<span
-															className={innerClassName}
-															onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
-															style={{ color: "var(--color-text-muted)" }}
-														>
-															{content}
-															{canSort && <SortIcon direction={isSorted} />}
-														</span>
-														{isSticky && isScrolled && (
-															<div className="absolute top-0 right-0 bottom-0 w-4 translate-x-full pointer-events-none bg-linear-to-r from-black/4 to-transparent z-100" />
+														{(dragListeners) => (
+															<>
+																<span
+																	className={innerClassName}
+																	onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+																	style={{ color: "var(--color-text-muted)", cursor: "grab" }}
+																	{...dragListeners}
+																>
+																	{content}
+																	{canSort && <SortIcon direction={isSorted} />}
+																</span>
+																{resizeHandle}
+																{isSticky && isScrolled && (
+																	<div className="absolute top-0 right-0 bottom-0 w-4 translate-x-full pointer-events-none bg-linear-to-r from-black/4 to-transparent z-100" />
+																)}
+															</>
 														)}
-													</th>
+													</SortableHeader>
 												);
+											}
+
+											return (
+												<th
+													key={header.id}
+													style={{
+														...headerStyle,
+														borderColor: "var(--color-border)",
+													}}
+													className={thClassName}
+												>
+													<span
+														className={innerClassName}
+														onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+														style={{ color: "var(--color-text-muted)" }}
+													>
+														{content}
+														{canSort && <SortIcon direction={isSorted} />}
+													</span>
+													{resizeHandle}
+													{isSticky && isScrolled && (
+														<div className="absolute top-0 right-0 bottom-0 w-4 translate-x-full pointer-events-none bg-linear-to-r from-black/4 to-transparent z-100" />
+													)}
+												</th>
+											);
 											})}
 										</SortableContext>
 									</tr>
 								))}
 							</thead>
-							<tbody className="[&_tr:last-child]:border-0">
-								{table.getRowModel().rows.map((row, rowIdx) => {
-									const isSelected = row.getIsSelected();
-									const visibleCells = row.getVisibleCells();
-									return (
-										<tr
-											key={row.id}
-											data-state={isSelected ? "selected" : undefined}
-											className={cn(
-												"border-b transition-all duration-150 group/row relative",
-												onRowClick && "cursor-pointer",
-												isSelected && "data-[state=selected]:bg-(--color-accent-light)",
-											)}
-											style={{
-												borderColor: "var(--color-border)",
-												background: isSelected
-													? "var(--color-accent-light)"
-													: rowIdx % 2 === 0
-														? "var(--color-surface)"
-														: "var(--color-bg)",
-											}}
-											onClick={() => onRowClick?.(row.original, rowIdx)}
-											onMouseEnter={(e) => {
-												if (!isSelected)
-													{(e.currentTarget as HTMLElement).style.background = "var(--color-surface-hover)";}
-											}}
-											onMouseLeave={(e) => {
-												if (!isSelected)
-													{(e.currentTarget as HTMLElement).style.background =
-														rowIdx % 2 === 0 ? "var(--color-surface)" : "var(--color-bg)";}
-											}}
-										>
-											{visibleCells.map((cell, colIdx) => {
-												const isFirstData = colIdx === (enableRowSelection ? 1 : 0);
-												const isSticky = stickyFirstColumn && isFirstData;
-												const isSelectCol = cell.column.id === "select";
-												const isLastCol = colIdx === visibleCells.length - 1;
-
-												const rowBg = isSelected
-													? "var(--color-accent-light)"
-													: rowIdx % 2 === 0
-														? "var(--color-surface)"
-														: "var(--color-bg)";
-
-												const cellStyle: React.CSSProperties = {
-													borderColor: "var(--color-border)",
-													...(isSticky
-														? {
-																position: "sticky" as const,
-																left: enableRowSelection ? 40 : 0,
-																zIndex: 20,
-																background: rowBg,
-																boxShadow: isScrolled ? "4px 0 12px -2px rgba(0,0,0,0.12), 2px 0 4px -1px rgba(0,0,0,0.06)" : "none",
-															}
-														: {}),
-													...(isSelectCol
-														? {
-																position: "sticky" as const,
-																left: 0,
-																zIndex: 20,
-																background: rowBg,
-																width: 40,
-															}
-														: {}),
-												};
-
-												return (
-													<td
-														key={cell.id}
-														className={cn(
-															"px-3 py-1.5 align-middle whitespace-nowrap text-xs border-b transition-colors box-border",
-															!isLastCol && "border-r",
-															isSticky && isScrolled && "border-r-2!",
-														)}
-														style={cellStyle}
-													>
-														<div className="overflow-hidden">
-															{flexRender(cell.column.columnDef.cell, cell.getContext())}
-														</div>
-														{isSticky && isScrolled && (
-															<div className="absolute top-0 right-0 bottom-0 w-4 translate-x-full pointer-events-none bg-linear-to-r from-black/4 to-transparent z-100" />
-														)}
-													</td>
-												);
-											})}
-										</tr>
-									);
-								})}
-							</tbody>
+							<DataTableBody
+								table={table}
+								activeRowId={activeRowId}
+								getRowId={getRowId}
+								enableRowSelection={enableRowSelection}
+								stickyFirstColumn={stickyFirstColumn}
+								isScrolled={isScrolled}
+								onRowClick={onRowClick}
+							/>
 						</table>
 					</DndContext>
 				)}
@@ -805,6 +801,130 @@ export function DataTable<TData, TValue>({
 		</div>
 	);
 }
+
+/* ─── Memoized Table Body (skips re-render during column resize) ─── */
+
+// biome-ignore lint/suspicious/noExplicitAny: generic body component used with React.memo
+type DataTableBodyProps = {
+	table: Table<any>;
+	activeRowId?: string;
+	getRowId?: (row: any) => string;
+	enableRowSelection: boolean;
+	stickyFirstColumn: boolean;
+	isScrolled: boolean;
+	onRowClick?: (row: any, index: number) => void;
+};
+
+function DataTableBodyInner({
+	table,
+	activeRowId,
+	getRowId,
+	enableRowSelection,
+	stickyFirstColumn,
+	isScrolled,
+	onRowClick,
+}: DataTableBodyProps) {
+	return (
+		<tbody className="[&_tr:last-child]:border-0">
+			{table.getRowModel().rows.map((row, rowIdx) => {
+				const isSelected = row.getIsSelected();
+				const visibleCells = row.getVisibleCells();
+				const isActive = activeRowId != null && getRowId != null && getRowId(row.original) === activeRowId;
+				const baseBg = isActive
+					? "var(--color-accent-light)"
+					: isSelected
+						? "var(--color-accent-light)"
+						: rowIdx % 2 === 0
+							? "var(--color-surface)"
+							: "var(--color-bg)";
+				return (
+					<tr
+						key={row.id}
+						data-state={isSelected ? "selected" : isActive ? "active" : undefined}
+						className={cn(
+							"border-b transition-all duration-150 group/row",
+							onRowClick && "cursor-pointer",
+							isSelected && "data-[state=selected]:bg-(--color-accent-light)",
+						)}
+						style={{
+							borderColor: isActive ? "var(--color-accent)" : "var(--color-border)",
+							background: baseBg,
+						}}
+						onClick={() => onRowClick?.(row.original, rowIdx)}
+						onMouseEnter={(e) => {
+							if (!isSelected && !isActive)
+								{(e.currentTarget as HTMLElement).style.background = "var(--color-surface-hover)";}
+						}}
+						onMouseLeave={(e) => {
+							if (!isSelected && !isActive)
+								{(e.currentTarget as HTMLElement).style.background =
+									rowIdx % 2 === 0 ? "var(--color-surface)" : "var(--color-bg)";}
+						}}
+					>
+						{visibleCells.map((cell, colIdx) => {
+							const isFirstData = colIdx === (enableRowSelection ? 1 : 0);
+							const isSticky = stickyFirstColumn && isFirstData;
+							const isSelectCol = cell.column.id === "select";
+							const isLastCol = colIdx === visibleCells.length - 1;
+
+							const rowBg = baseBg;
+							const altBg = rowIdx % 2 === 0 ? "var(--color-surface)" : "var(--color-bg)";
+							const stickyBg = (isActive || isSelected)
+								? `linear-gradient(var(--color-accent-light), var(--color-accent-light)), linear-gradient(${altBg}, ${altBg})`
+								: rowBg;
+
+							const cellStyle: React.CSSProperties = {
+								borderColor: "var(--color-border)",
+								...(isSticky
+									? {
+											position: "sticky" as const,
+											left: enableRowSelection ? 40 : 0,
+											zIndex: 2,
+											background: stickyBg,
+											boxShadow: isScrolled ? "4px 0 12px -2px rgba(0,0,0,0.12), 2px 0 4px -1px rgba(0,0,0,0.06)" : "none",
+										}
+									: {}),
+								...(isSelectCol
+									? {
+											position: "sticky" as const,
+											left: 0,
+											zIndex: 2,
+											background: stickyBg,
+											width: 40,
+										}
+									: {}),
+							};
+
+							return (
+								<td
+									key={cell.id}
+									className={cn(
+										"px-3 py-1.5 align-middle whitespace-nowrap text-xs border-b transition-colors box-border",
+										!isLastCol && "border-r",
+										isSticky && isScrolled && "border-r-2!",
+									)}
+									style={cellStyle}
+								>
+									<div className="overflow-hidden">
+										{flexRender(cell.column.columnDef.cell, cell.getContext())}
+									</div>
+									{isSticky && isScrolled && (
+										<div className="absolute top-0 right-0 bottom-0 w-4 translate-x-full pointer-events-none bg-linear-to-r from-black/4 to-transparent z-100" />
+									)}
+								</td>
+							);
+						})}
+					</tr>
+				);
+			})}
+		</tbody>
+	);
+}
+
+const DataTableBody = React.memo(DataTableBodyInner, (prev, next) =>
+	!!next.table.getState().columnSizingInfo.isResizingColumn
+	&& prev.table.options.data === next.table.options.data,
+);
 
 /* ─── Sub-components ─── */
 

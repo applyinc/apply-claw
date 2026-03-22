@@ -98,6 +98,7 @@ export type ViewTypeSettings = {
 	galleryTitleField?: string;
 	listTitleField?: string;
 	listSubtitleField?: string;
+	column_widths?: Record<string, number>;
 };
 
 export type SavedView = {
@@ -106,6 +107,7 @@ export type SavedView = {
 	filters?: FilterGroup;
 	sort?: SortRule[];
 	columns?: string[];
+	column_widths?: Record<string, number>;
 	settings?: ViewTypeSettings;
 };
 

@@ -26,7 +26,7 @@ import { Breadcrumbs } from "../components/workspace/breadcrumbs";
 import { EmptyState } from "../components/workspace/empty-state";
 import { ReportViewer } from "../components/charts/report-viewer";
 import { ChatPanel, type ChatPanelHandle, type SubagentSpawnInfo } from "../components/chat-panel";
-import { EntryDetailModal } from "../components/workspace/entry-detail-modal";
+import { EntryDetailPanel } from "../components/workspace/entry-detail-panel";
 import { useSearchIndex } from "@/lib/search-index";
 import { parseWorkspaceLink, isWorkspaceLink, parseUrlState, buildUrl, buildWorkspaceSyncParams, type WorkspaceUrlState } from "@/lib/workspace-links";
 import { isCodeFile } from "@/lib/report-utils";
@@ -43,6 +43,7 @@ import {
   autoDetectViewField,
 } from "@/lib/object-filters";
 import { UnicodeSpinner } from "../components/unicode-spinner";
+import { ToastProvider } from "../components/workspace/toast";
 import { ChatSessionsSidebar, type SidebarGatewaySession, type SidebarChannelStatus } from "../components/workspace/chat-sessions-sidebar";
 import {
   DropdownMenu,
@@ -231,6 +232,9 @@ const CHAT_SIDEBAR_MAX = 480;
 const STORAGE_LEFT = "dench-workspace-left-sidebar-width";
 const STORAGE_RIGHT = "dench-workspace-right-sidebar-width";
 const STORAGE_CHAT_SIDEBAR = "dench-workspace-chat-sidebar-width";
+const STORAGE_ENTRY_PANEL = "dench-workspace-entry-panel-width";
+const ENTRY_PANEL_MIN = 360;
+const ENTRY_PANEL_MAX = 720;
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
@@ -392,13 +396,15 @@ function resolveNode(
 
 export function WorkspaceShell() {
   return (
-    <Suspense fallback={
-      <div className="flex h-screen items-center justify-center" style={{ background: "var(--color-bg)" }}>
-        <UnicodeSpinner name="braille" className="text-2xl" style={{ color: "var(--color-text-muted)" }} />
-      </div>
-    }>
-      <WorkspacePageInner />
-    </Suspense>
+    <ToastProvider>
+      <Suspense fallback={
+        <div className="flex h-screen items-center justify-center" style={{ background: "var(--color-bg)" }}>
+          <UnicodeSpinner name="braille" className="text-2xl" style={{ color: "var(--color-text-muted)" }} />
+        </div>
+      }>
+        <WorkspacePageInner />
+      </Suspense>
+    </ToastProvider>
   );
 }
 
@@ -731,6 +737,7 @@ function WorkspacePageInner() {
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(260);
   const [rightSidebarWidth, setRightSidebarWidth] = useState(320);
   const [chatSidebarWidth, setChatSidebarWidth] = useState(280);
+  const [entryPanelWidth, setEntryPanelWidth] = useState(420);
   useEffect(() => {
     const left = window.localStorage.getItem(STORAGE_LEFT);
     const nLeft = left ? parseInt(left, 10) : NaN;
@@ -747,6 +754,11 @@ function WorkspacePageInner() {
     if (Number.isFinite(nChat)) {
       setChatSidebarWidth(clamp(nChat, CHAT_SIDEBAR_MIN, CHAT_SIDEBAR_MAX));
     }
+    const ep = window.localStorage.getItem(STORAGE_ENTRY_PANEL);
+    const nEp = ep ? parseInt(ep, 10) : NaN;
+    if (Number.isFinite(nEp)) {
+      setEntryPanelWidth(clamp(nEp, ENTRY_PANEL_MIN, ENTRY_PANEL_MAX));
+    }
   }, []);
   useEffect(() => {
     window.localStorage.setItem(STORAGE_LEFT, String(leftSidebarWidth));
@@ -757,6 +769,9 @@ function WorkspacePageInner() {
   useEffect(() => {
     window.localStorage.setItem(STORAGE_CHAT_SIDEBAR, String(chatSidebarWidth));
   }, [chatSidebarWidth]);
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE_ENTRY_PANEL, String(entryPanelWidth));
+  }, [entryPanelWidth]);
 
   // Keyboard shortcuts: Cmd+B = toggle left sidebar, Cmd+Shift+B = toggle right sidebar, Cmd+J = toggle terminal
   useEffect(() => {
@@ -2616,6 +2631,7 @@ function WorkspacePageInner() {
                     onRefreshTree={refreshTree}
                     onNavigate={handleEditorNavigate}
                     onOpenEntry={handleOpenEntry}
+                    activeEntryId={entryModal?.entryId}
                     searchFn={searchIndex}
                     onSelectCronJob={handleSelectCronJob}
                     onBackToCronDashboard={handleBackToCronDashboard}
@@ -2636,7 +2652,44 @@ function WorkspacePageInner() {
             </div>
           </div>
 
-          {!isMobile && showMainChat && (
+          {!isMobile && showMainChat && entryModal && (
+            <aside
+              className="sidebar-animate flex-shrink-0 min-h-0 border-l flex flex-col relative overflow-hidden"
+              style={{
+                width: entryPanelWidth,
+                borderColor: "var(--color-border)",
+                background: "var(--color-bg)",
+                transition: "width 200ms ease",
+              }}
+            >
+              <div className="flex h-full min-h-0 flex-col relative overflow-hidden" style={{ width: entryPanelWidth, minWidth: entryPanelWidth }}>
+                <ResizeHandle
+                  mode="right"
+                  containerRef={layoutRef}
+                  min={ENTRY_PANEL_MIN}
+                  max={ENTRY_PANEL_MAX}
+                  onResize={setEntryPanelWidth}
+                />
+                <EntryDetailPanel
+                  objectName={entryModal.objectName}
+                  entryId={entryModal.entryId}
+                  members={context?.members}
+                  tree={tree}
+                  searchFn={searchIndex}
+                  onClose={handleCloseEntry}
+                  onNavigateEntry={(objName, eid) => handleOpenEntry(objName, eid)}
+                  onNavigateObject={(objName) => {
+                    handleCloseEntry();
+                    handleNavigateToObject(objName);
+                  }}
+                  onRefresh={refreshCurrentObject}
+                  onNavigate={handleEditorNavigate}
+                />
+              </div>
+            </aside>
+          )}
+
+          {!isMobile && showMainChat && !entryModal && (
             <aside
               className="sidebar-animate flex-shrink-0 min-h-0 border-l flex flex-col relative overflow-hidden"
               style={{
@@ -2689,7 +2742,44 @@ function WorkspacePageInner() {
             </aside>
           )}
 
-          {!isMobile && !showMainChat && fileContext && (
+          {!isMobile && !showMainChat && entryModal && (
+            <aside
+              className="sidebar-animate flex-shrink-0 min-h-0 border-l flex flex-col relative overflow-hidden"
+              style={{
+                width: entryPanelWidth,
+                borderColor: "var(--color-border)",
+                background: "var(--color-bg)",
+                transition: "width 200ms ease",
+              }}
+            >
+              <div className="flex h-full min-h-0 flex-col relative overflow-hidden" style={{ width: entryPanelWidth, minWidth: entryPanelWidth }}>
+                <ResizeHandle
+                  mode="right"
+                  containerRef={layoutRef}
+                  min={ENTRY_PANEL_MIN}
+                  max={ENTRY_PANEL_MAX}
+                  onResize={setEntryPanelWidth}
+                />
+                <EntryDetailPanel
+                  objectName={entryModal.objectName}
+                  entryId={entryModal.entryId}
+                  members={context?.members}
+                  tree={tree}
+                  searchFn={searchIndex}
+                  onClose={handleCloseEntry}
+                  onNavigateEntry={(objName, eid) => handleOpenEntry(objName, eid)}
+                  onNavigateObject={(objName) => {
+                    handleCloseEntry();
+                    handleNavigateToObject(objName);
+                  }}
+                  onRefresh={refreshCurrentObject}
+                  onNavigate={handleEditorNavigate}
+                />
+              </div>
+            </aside>
+          )}
+
+          {!isMobile && !showMainChat && !entryModal && fileContext && (
             <aside
               className="sidebar-animate flex-shrink-0 min-h-0 border-l flex flex-col relative overflow-hidden"
               style={{
@@ -2790,20 +2880,25 @@ function WorkspacePageInner() {
         )}
       </main>
 
-      {/* Entry detail modal (rendered on top of everything) */}
-      {entryModal && (
-        <EntryDetailModal
-          objectName={entryModal.objectName}
-          entryId={entryModal.entryId}
-          members={context?.members}
-          onClose={handleCloseEntry}
-          onNavigateEntry={(objName, eid) => handleOpenEntry(objName, eid)}
-          onNavigateObject={(objName) => {
-            handleCloseEntry();
-            handleNavigateToObject(objName);
-          }}
-          onRefresh={refreshCurrentObject}
-        />
+      {/* Mobile entry detail panel */}
+      {isMobile && entryModal && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "var(--color-bg)" }}>
+          <EntryDetailPanel
+            objectName={entryModal.objectName}
+            entryId={entryModal.entryId}
+            members={context?.members}
+            tree={tree}
+            searchFn={searchIndex}
+            onClose={handleCloseEntry}
+            onNavigateEntry={(objName, eid) => handleOpenEntry(objName, eid)}
+            onNavigateObject={(objName) => {
+              handleCloseEntry();
+              handleNavigateToObject(objName);
+            }}
+            onRefresh={refreshCurrentObject}
+            onNavigate={handleEditorNavigate}
+          />
+        </div>
       )}
     </div>
   );
@@ -3153,6 +3248,7 @@ function ContentRenderer({
   onRefreshTree,
   onNavigate,
   onOpenEntry,
+  activeEntryId,
   searchFn,
   onSelectCronJob,
   onBackToCronDashboard,
@@ -3182,6 +3278,7 @@ function ContentRenderer({
   onRefreshTree: () => void;
   onNavigate: (href: string) => void;
   onOpenEntry: (objectName: string, entryId: string) => void;
+  activeEntryId?: string;
   searchFn: (query: string, limit?: number) => import("@/lib/search-index").SearchIndexItem[];
   onSelectCronJob: (jobId: string) => void;
   onBackToCronDashboard: () => void;
@@ -3213,6 +3310,7 @@ function ContentRenderer({
           onNavigateToObject={onNavigateToObject}
           onRefreshObject={onRefreshObject}
           onOpenEntry={onOpenEntry}
+          activeEntryId={activeEntryId}
         />
       );
 
@@ -3389,12 +3487,14 @@ function ObjectView({
   onNavigateToObject,
   onRefreshObject,
   onOpenEntry,
+  activeEntryId,
 }: {
   data: ObjectData;
   members?: Array<{ id: string; name: string; email: string; role: string }>;
   onNavigateToObject: (objectName: string) => void;
   onRefreshObject: () => void;
   onOpenEntry?: (objectName: string, entryId: string) => void;
+  activeEntryId?: string;
 }) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -3440,6 +3540,10 @@ function ObjectView({
 
   // Column visibility: maps field IDs to boolean (false = hidden)
   const [viewColumns, setViewColumns] = useState<string[] | undefined>(initialUrlState.cols ?? undefined);
+  // Column widths: maps field name to pixel width (persisted in view_settings / saved views)
+  const [columnWidths, setColumnWidths] = useState<Record<string, number> | undefined>(
+    () => data.viewSettings?.column_widths,
+  );
 
   // Sync object view state to URL params (additive — preserves path/entry/browse params).
   // Skip the initial render to avoid overwriting URL params that haven't been
@@ -3499,6 +3603,40 @@ function ObjectView({
     if (vis["updated_at"] !== false) visibleNames.push("updated_at");
     setViewColumns(visibleNames.length > 0 ? visibleNames : undefined);
   }, [data.fields]);
+
+  // Column sizing: convert field-name-based widths to TanStack ColumnSizingState (keyed by field ID)
+  const columnSizing = useMemo(() => {
+    if (!columnWidths) return undefined;
+    const sizing: Record<string, number> = {};
+    for (const field of data.fields) {
+      if (columnWidths[field.name] != null) sizing[field.id] = columnWidths[field.name];
+    }
+    if (columnWidths["created_at"] != null) sizing["created_at"] = columnWidths["created_at"];
+    if (columnWidths["updated_at"] != null) sizing["updated_at"] = columnWidths["updated_at"];
+    return Object.keys(sizing).length > 0 ? sizing : undefined;
+  }, [columnWidths, data.fields]);
+
+  // Callback for column sizing changes — converts back to field-name-based and persists
+  const handleColumnSizingChanged = useCallback((sizing: Record<string, number>) => {
+    const widths: Record<string, number> = {};
+    for (const field of data.fields) {
+      if (sizing[field.id] != null) widths[field.name] = Math.round(sizing[field.id]);
+    }
+    if (sizing["created_at"] != null) widths["created_at"] = Math.round(sizing["created_at"]);
+    if (sizing["updated_at"] != null) widths["updated_at"] = Math.round(sizing["updated_at"]);
+    const next = Object.keys(widths).length > 0 ? widths : undefined;
+    setColumnWidths(next);
+    // Persist to view_settings in .object.yaml
+    const newSettings = { ...viewSettings, column_widths: next };
+    void fetch(
+      `/api/workspace/objects/${encodeURIComponent(data.object.name)}/views`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ views: savedViews, activeView: activeViewName, viewSettings: newSettings }),
+      },
+    ).catch(() => {});
+  }, [data.fields, data.object.name, viewSettings, savedViews, activeViewName]);
 
   // Fetch entries from server with current pagination/filter/sort/search state
   const fetchEntries = useCallback(async (opts?: {
@@ -3565,12 +3703,14 @@ function ObjectView({
       currentActiveViewName: activeViewName,
       currentFilters: filters,
       currentViewColumns: viewColumns,
+      currentColumnWidths: columnWidths,
       currentViewType: currentViewType,
       currentSettings: viewSettings,
     });
     if (decision?.shouldApply) {
       setFilters(decision.nextFilters);
       setViewColumns(decision.nextColumns);
+      if (decision.nextColumnWidths !== undefined) setColumnWidths(decision.nextColumnWidths);
       setActiveViewName(decision.nextActiveViewName);
       if (decision.nextViewType) {setCurrentViewType(decision.nextViewType);}
       if (decision.nextSettings) {setViewSettings((prev) => ({ ...prev, ...decision.nextSettings }));}
@@ -3626,6 +3766,7 @@ function ObjectView({
       view_type: currentViewType,
       filters,
       columns: viewColumns,
+      column_widths: columnWidths,
       settings: viewSettings,
     };
     const updated = [...savedViews.filter((v) => v.name !== name), newView];
@@ -3643,12 +3784,13 @@ function ObjectView({
     } catch {
       // ignore save errors
     }
-  }, [filters, savedViews, data.object.name, currentViewType, viewColumns, viewSettings]);
+  }, [filters, savedViews, data.object.name, currentViewType, viewColumns, columnWidths, viewSettings]);
 
   const handleLoadView = useCallback((view: SavedView) => {
     const newFilters = view.filters ?? emptyFilterGroup();
     setFilters(newFilters);
     setViewColumns(view.columns);
+    setColumnWidths(view.column_widths);
     setActiveViewName(view.name);
     if (view.view_type) {setCurrentViewType(view.view_type);}
     if (view.settings) {setViewSettings((prev) => ({ ...prev, ...view.settings }));}
@@ -3961,8 +4103,11 @@ function ObjectView({
             onNavigateToEntry={onOpenEntry}
             onEntryClick={onOpenEntry ? (entryId) => onOpenEntry(data.object.name, entryId) : undefined}
             onRefresh={handleRefresh}
+            activeEntryId={activeEntryId}
             columnVisibility={columnVisibility}
             onColumnVisibilityChanged={handleColumnVisibilityChanged}
+            columnSizing={columnSizing}
+            onColumnSizingChanged={handleColumnSizingChanged}
             serverPagination={{
               totalCount,
               page: serverPage,

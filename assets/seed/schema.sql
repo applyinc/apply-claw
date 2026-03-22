@@ -89,6 +89,21 @@ CREATE TABLE IF NOT EXISTS documents (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS action_runs (
+  id VARCHAR PRIMARY KEY DEFAULT (gen_random_uuid()::VARCHAR),
+  action_id VARCHAR NOT NULL,
+  field_id VARCHAR NOT NULL,
+  entry_id VARCHAR NOT NULL,
+  object_id VARCHAR NOT NULL,
+  status VARCHAR NOT NULL DEFAULT 'pending',
+  started_at TIMESTAMPTZ DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  result VARCHAR,
+  error VARCHAR,
+  stdout VARCHAR,
+  exit_code INTEGER
+);
+
 -- ── Seed: people ──
 
 INSERT INTO objects (id, name, description, icon, default_view, immutable, sort_order)

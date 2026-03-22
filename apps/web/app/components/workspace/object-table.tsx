@@ -2,11 +2,16 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { type ColumnDef, type CellContext } from "@tanstack/react-table";
-import { DataTable, type RowAction } from "./data-table";
+import { DataTable, type RowAction, type ColumnSizingState } from "./data-table";
 import { RelationSelect } from "./relation-select";
 import { FormattedFieldValue } from "./formatted-field-value";
 import { formatWorkspaceFieldValue } from "@/lib/workspace-cell-format";
 import { parseTagsValue } from "@/lib/parse-tags";
+import { ActionButton, useActionStates, type ActionConfig } from "./action-button";
+import { ConfirmDialog } from "./confirm-dialog";
+import { BulkActionBar } from "./bulk-action-bar";
+import { useToast } from "./toast";
+import { ColumnHeaderMenu, InlineRenameInput, AddColumnPopover, FieldTypeIcon } from "./column-header-menu";
 
 /* ─── Types ─── */
 
@@ -21,6 +26,7 @@ type Field = {
 	relationship_type?: string;
 	related_object_name?: string;
 	sort_order?: number;
+	default_value?: string;
 };
 
 type ReverseRelation = {
@@ -50,9 +56,13 @@ type ObjectTableProps = {
 	onNavigateToEntry?: (objectName: string, entryId: string) => void;
 	onEntryClick?: (entryId: string) => void;
 	onRefresh?: () => void;
+	activeEntryId?: string;
 	/** Column visibility state keyed by field ID. */
 	columnVisibility?: Record<string, boolean>;
 	onColumnVisibilityChanged?: (visibility: Record<string, boolean>) => void;
+	/** Column widths keyed by field ID. */
+	columnSizing?: ColumnSizingState;
+	onColumnSizingChanged?: (sizing: ColumnSizingState) => void;
 	/** Server-side pagination props. */
 	serverPagination?: ServerPaginationProps;
 	/** Server-side search callback. */
@@ -573,6 +583,15 @@ function EditableCell({
 
 /* ─── Main ObjectTable ─── */
 
+function parseActionConfig(defaultValue: string | null | undefined): ActionConfig[] {
+	if (!defaultValue) return [];
+	try {
+		const parsed = JSON.parse(defaultValue);
+		if (parsed && Array.isArray(parsed.actions)) return parsed.actions;
+	} catch { /* ignore */ }
+	return [];
+}
+
 export function ObjectTable({
 	objectName,
 	fields,
@@ -584,14 +603,38 @@ export function ObjectTable({
 	onNavigateToEntry,
 	onEntryClick,
 	onRefresh,
+	activeEntryId,
 	columnVisibility,
 	onColumnVisibilityChanged,
+	columnSizing,
+	onColumnSizingChanged,
 	serverPagination,
 	onServerSearch,
 }: ObjectTableProps) {
 	const [rowSelection, setRowSelection] = useState<Record<string, boolean>>({});
 	const [showAddModal, setShowAddModal] = useState(false);
 	const [localEntries, setLocalEntries] = useState<EntryRow[]>(entries as EntryRow[]);
+	const [confirmState, setConfirmState] = useState<{
+		open: boolean; title: string; message: string; variant: "default" | "destructive";
+		confirmLabel: string; onConfirm: () => void;
+	} | null>(null);
+	const { executeBulkAction, bulkStates } = useActionStates();
+	const showToast = useToast();
+
+	const [renamingFieldId, setRenamingFieldId] = useState<string | null>(null);
+
+	const dataFields = useMemo(() => fields.filter((f) => f.type !== "action"), [fields]);
+	const actionFields = useMemo(() => fields.filter((f) => f.type === "action"), [fields]);
+
+	const allActionButtons = useMemo(() => {
+		const buttons: Array<{ action: ActionConfig; fieldId: string }> = [];
+		for (const af of actionFields) {
+			for (const a of parseActionConfig(af.default_value)) {
+				buttons.push({ action: a, fieldId: af.id });
+			}
+		}
+		return buttons;
+	}, [actionFields]);
 
 	// Keep local rows aligned with server-paginated updates.
 	useEffect(() => {
@@ -616,22 +659,107 @@ export function ObjectTable({
 		return reverseRelations.filter((rr) => Object.keys(rr.entries).length > 0);
 	}, [reverseRelations]);
 
-	// Build TanStack columns from fields
+	// Column management handlers
+	const handleColumnReorder = useCallback(
+		async (newOrder: string[]) => {
+			const fieldIdSet = new Set(fields.map((field) => field.id));
+			const fieldIds = newOrder.filter((id) => fieldIdSet.has(id));
+			try {
+				await fetch(`/api/workspace/objects/${encodeURIComponent(objectName)}/fields/reorder`, {
+					method: "PATCH",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ fieldOrder: fieldIds }),
+				});
+			} catch { /* ignore */ }
+		},
+		[objectName, fields],
+	);
+
+	const handleRenameColumn = useCallback(async (fieldId: string, newName: string) => {
+		try {
+			const res = await fetch(
+				`/api/workspace/objects/${encodeURIComponent(objectName)}/fields/${encodeURIComponent(fieldId)}`,
+				{ method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: newName }) },
+			);
+			if (res.ok) onRefresh?.();
+		} catch { /* ignore */ }
+		setRenamingFieldId(null);
+	}, [objectName, onRefresh]);
+
+	const handleDeleteColumn = useCallback((fieldId: string, fieldName: string) => {
+		setConfirmState({
+			open: true,
+			title: `Delete "${fieldName}" column?`,
+			message: "This will permanently remove this column and all its data from every entry. This cannot be undone.",
+			variant: "destructive",
+			confirmLabel: "Delete column",
+			onConfirm: async () => {
+				setConfirmState(null);
+				try {
+					await fetch(
+						`/api/workspace/objects/${encodeURIComponent(objectName)}/fields/${encodeURIComponent(fieldId)}`,
+						{ method: "DELETE" },
+					);
+					onRefresh?.();
+				} catch { /* ignore */ }
+			},
+		});
+	}, [objectName, onRefresh]);
+
+	const handleMoveColumn = useCallback((fieldId: string, direction: "left" | "right") => {
+		const fieldIds = dataFields.map((f) => f.id);
+		const idx = fieldIds.indexOf(fieldId);
+		if (direction === "left" && idx > 0) {
+			const newOrder = [...fieldIds];
+			[newOrder[idx], newOrder[idx - 1]] = [newOrder[idx - 1], newOrder[idx]];
+			void handleColumnReorder(newOrder);
+		} else if (direction === "right" && idx < fieldIds.length - 1) {
+			const newOrder = [...fieldIds];
+			[newOrder[idx], newOrder[idx + 1]] = [newOrder[idx + 1], newOrder[idx]];
+			void handleColumnReorder(newOrder);
+		}
+	}, [dataFields, handleColumnReorder]);
+
+	// Build TanStack columns from fields (excluding action fields)
 	const columns = useMemo<ColumnDef<EntryRow>[]>(() => {
-		const cols: ColumnDef<EntryRow>[] = fields.map((field, fieldIdx) => ({
+		const cols: ColumnDef<EntryRow>[] = dataFields.map((field, fieldIdx) => ({
 			id: field.id,
 			accessorKey: field.name,
 			meta: { label: field.name, fieldName: field.name },
-			header: () => (
-				<span className="flex items-center gap-1" style={{ color: "var(--color-text-muted)" }}>
-					{field.name}
-					{field.type === "relation" && field.related_object_name && (
-						<span className="text-[9px] font-normal normal-case tracking-normal opacity-60">
-							({field.related_object_name})
-						</span>
-					)}
-				</span>
-			),
+			header: ({ column }: { column: { getIsSorted: () => "asc" | "desc" | false; toggleSorting: (desc: boolean) => void; toggleVisibility: (visible: boolean) => void } }) => {
+				if (renamingFieldId === field.id) {
+					return (
+						<InlineRenameInput
+							currentName={field.name}
+							onSave={(newName) => void handleRenameColumn(field.id, newName)}
+							onCancel={() => setRenamingFieldId(null)}
+						/>
+					);
+				}
+				return (
+					<span className="flex items-center gap-1.5 w-full" style={{ color: "var(--color-text-muted)" }}>
+						<FieldTypeIcon type={field.type} size={12} className="shrink-0 opacity-50" />
+						<span className="truncate">{field.name}</span>
+						{field.type === "relation" && field.related_object_name && (
+							<span className="text-[9px] font-normal normal-case tracking-normal opacity-60 shrink-0">
+								({field.related_object_name})
+							</span>
+						)}
+						<ColumnHeaderMenu
+							field={field}
+							sortDirection={column.getIsSorted()}
+							onSort={(desc) => column.toggleSorting(desc)}
+							onHide={() => column.toggleVisibility(false)}
+							onRename={() => setRenamingFieldId(field.id)}
+							onDelete={() => handleDeleteColumn(field.id, field.name)}
+							canMoveLeft={fieldIdx > 0}
+							canMoveRight={fieldIdx < dataFields.length - 1}
+							onMoveLeft={() => handleMoveColumn(field.id, "left")}
+							onMoveRight={() => handleMoveColumn(field.id, "right")}
+						/>
+					</span>
+				);
+			},
 			cell: (info: CellContext<EntryRow, unknown>) => {
 				const eid = info.row.original.entry_id;
 				const entryId = String(eid != null && typeof eid === "object" ? JSON.stringify(eid) : (eid ?? ""));
@@ -739,24 +867,82 @@ export function ObjectTable({
 			});
 		}
 
+		for (const af of actionFields) {
+			const actions = parseActionConfig(af.default_value);
+			if (actions.length === 0) continue;
+			cols.push({
+				id: `action_${af.id}`,
+				meta: { label: af.name, fieldName: af.name },
+				header: () => (
+					<span className="flex items-center gap-1" style={{ color: "var(--color-text-muted)" }}>
+						{af.name}
+					</span>
+				),
+				cell: (info: CellContext<EntryRow, unknown>) => {
+					const eid = info.row.original.entry_id;
+					const entryId = String(eid != null && typeof eid === "object" ? JSON.stringify(eid) : (eid ?? ""));
+					return (
+						<div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+							{actions.map((action) => (
+								<ActionButton
+									key={action.id}
+									action={action}
+									entryId={entryId}
+									objectName={objectName}
+									fieldId={af.id}
+									compact={actions.length > 1}
+									onToast={showToast}
+									onRequestConfirm={(act, eid2, onConfirm) => {
+										setConfirmState({
+											open: true,
+											title: act.label,
+											message: act.confirmMessage ?? `Run "${act.label}" on this entry?`,
+											variant: act.variant === "destructive" ? "destructive" : "default",
+											confirmLabel: act.label,
+											onConfirm: () => { setConfirmState(null); onConfirm(); },
+										});
+									}}
+								/>
+							))}
+						</div>
+					);
+				},
+				enableSorting: false,
+				enableHiding: true,
+				size: Math.max(100, actions.length * 100),
+			});
+		}
+
+		cols.push({
+			id: "__add_column",
+			header: () => (
+				<AddColumnPopover objectName={objectName} onCreated={() => onRefresh?.()} />
+			),
+			cell: () => null,
+			size: 44,
+			enableSorting: false,
+			enableHiding: false,
+			enableResizing: false,
+		});
+
 		return cols;
-	}, [fields, activeReverseRelations, objectName, members, relationLabels, onNavigateToObject, onNavigateToEntry, onRefresh]);
+	}, [dataFields, actionFields, activeReverseRelations, objectName, members, relationLabels, onNavigateToObject, onNavigateToEntry, onRefresh, showToast, renamingFieldId, handleRenameColumn, handleDeleteColumn, handleMoveColumn]);
 
 	// Add entry handler — opens modal instead of creating empty entry
 	const handleAdd = useCallback(() => {
 		setShowAddModal(true);
 	}, []);
 
-	// Bulk delete handler
-	const handleBulkDelete = useCallback(async () => {
-		const selectedIds = Object.keys(rowSelection)
+	const getSelectedEntryIds = useCallback(() => {
+		return Object.keys(rowSelection)
 			.filter((k) => rowSelection[k])
 			.map((idx) => safeString(localEntries[Number(idx)]?.entry_id))
 			.filter(Boolean);
+	}, [rowSelection, localEntries]);
 
-		if (selectedIds.length === 0) {return;}
-		if (!confirm(`Delete ${selectedIds.length} entries?`)) {return;}
-
+	const doBulkDelete = useCallback(async () => {
+		const selectedIds = getSelectedEntryIds();
+		if (selectedIds.length === 0) return;
 		try {
 			await fetch(`/api/workspace/objects/${encodeURIComponent(objectName)}/entries/bulk-delete`, {
 				method: "POST",
@@ -766,21 +952,63 @@ export function ObjectTable({
 			setRowSelection({});
 			onRefresh?.();
 		} catch { /* ignore */ }
-	}, [rowSelection, localEntries, objectName, onRefresh]);
+	}, [getSelectedEntryIds, objectName, onRefresh]);
 
-	// Single delete handler
-	const handleDeleteEntry = useCallback(async (entry: EntryRow) => {
+	const handleBulkDelete = useCallback(() => {
+		const count = getSelectedEntryIds().length;
+		if (count === 0) return;
+		setConfirmState({
+			open: true,
+			title: `Delete ${count} ${count === 1 ? "entry" : "entries"}?`,
+			message: "This action cannot be undone. All selected entries will be permanently removed.",
+			variant: "destructive",
+			confirmLabel: "Delete",
+			onConfirm: () => { setConfirmState(null); void doBulkDelete(); },
+		});
+	}, [getSelectedEntryIds, doBulkDelete]);
+
+	const handleDeleteEntry = useCallback((entry: EntryRow) => {
 		const eid = entry.entry_id;
 		const entryId = String(eid != null && typeof eid === "object" ? JSON.stringify(eid) : (eid ?? ""));
-		if (!entryId) {return;}
-		if (!confirm("Delete this entry?")) {return;}
-		try {
-			await fetch(`/api/workspace/objects/${encodeURIComponent(objectName)}/entries/${encodeURIComponent(entryId)}`, {
-				method: "DELETE",
-			});
-			onRefresh?.();
-		} catch { /* ignore */ }
+		if (!entryId) return;
+		setConfirmState({
+			open: true,
+			title: "Delete this entry?",
+			message: "This action cannot be undone.",
+			variant: "destructive",
+			confirmLabel: "Delete",
+			onConfirm: async () => {
+				setConfirmState(null);
+				try {
+					await fetch(`/api/workspace/objects/${encodeURIComponent(objectName)}/entries/${encodeURIComponent(entryId)}`, { method: "DELETE" });
+					onRefresh?.();
+				} catch { /* ignore */ }
+			},
+		});
 	}, [objectName, onRefresh]);
+
+	const handleBulkAction = useCallback((action: ActionConfig, fieldId: string) => {
+		const selectedIds = getSelectedEntryIds();
+		if (selectedIds.length === 0) return;
+
+		const run = () => void executeBulkAction(action, fieldId, objectName, selectedIds, {
+			autoResetMs: action.autoResetMs,
+			onToast: showToast,
+		});
+
+		if (action.confirmMessage) {
+			setConfirmState({
+				open: true,
+				title: `${action.label} (${selectedIds.length} entries)`,
+				message: action.confirmMessage,
+				variant: action.variant === "destructive" ? "destructive" : "default",
+				confirmLabel: action.label,
+				onConfirm: () => { setConfirmState(null); run(); },
+			});
+		} else {
+			run();
+		}
+	}, [getSelectedEntryIds, objectName, executeBulkAction, showToast]);
 
 	// Row actions
 		const getRowActions = useCallback(
@@ -807,35 +1035,7 @@ export function ObjectTable({
 		[onEntryClick, handleDeleteEntry],
 	);
 
-	// Column reorder handler
-	const handleColumnReorder = useCallback(
-		async (newOrder: string[]) => {
-			// Persist only real object field IDs (ignore synthetic/system columns).
-			const fieldIdSet = new Set(fields.map((field) => field.id));
-			const fieldIds = newOrder.filter((id) => fieldIdSet.has(id));
-			try {
-				await fetch(`/api/workspace/objects/${encodeURIComponent(objectName)}/fields/reorder`, {
-					method: "PATCH",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ fieldOrder: fieldIds }),
-				});
-			} catch { /* ignore */ }
-		},
-		[objectName, fields],
-	);
-
-	// Bulk actions toolbar
-	const bulkActions = (
-		<button
-			type="button"
-			onClick={() => void handleBulkDelete()}
-			className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium"
-			style={{ background: "rgba(220, 38, 38, 0.08)", color: "var(--color-error)", border: "1px solid rgba(220, 38, 38, 0.2)" }}
-		>
-			<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18" /><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" /><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" /></svg>
-			Delete
-		</button>
-	);
+	const selectedCount = Object.keys(rowSelection).filter((k) => rowSelection[k]).length;
 
 	return (
 	<>
@@ -848,7 +1048,6 @@ export function ObjectTable({
 			enableColumnReordering
 			rowSelection={rowSelection}
 			onRowSelectionChange={setRowSelection}
-			bulkActions={bulkActions}
 			onColumnReorder={handleColumnReorder}
 			searchPlaceholder={`Search ${objectName}...`}
 			onRefresh={onRefresh}
@@ -856,22 +1055,46 @@ export function ObjectTable({
 			addButtonLabel="+ Add"
 			rowActions={getRowActions}
 			stickyFirstColumn
+			activeRowId={activeEntryId}
+			getRowId={(row) => String((row as EntryRow).entry_id ?? "")}
 			initialColumnVisibility={columnVisibility}
 			onColumnVisibilityChanged={onColumnVisibilityChanged}
+			initialColumnSizing={columnSizing}
+			onColumnSizingChange={onColumnSizingChanged}
 			serverPagination={serverPagination}
 			onServerSearch={onServerSearch}
 		/>
 
-			{/* Add Entry Modal */}
-			{showAddModal && (
-				<AddEntryModal
-					objectName={objectName}
-					fields={fields}
-					members={members}
-					onClose={() => setShowAddModal(false)}
-					onSaved={onRefresh}
-				/>
-			)}
+		<BulkActionBar
+			selectedCount={selectedCount}
+			actions={allActionButtons}
+			onDeselectAll={() => setRowSelection({})}
+			onBulkAction={handleBulkAction}
+			onBulkDelete={handleBulkDelete}
+			bulkRunStates={bulkStates}
+		/>
+
+		{confirmState && (
+			<ConfirmDialog
+				open={confirmState.open}
+				title={confirmState.title}
+				message={confirmState.message}
+				variant={confirmState.variant}
+				confirmLabel={confirmState.confirmLabel}
+				onConfirm={confirmState.onConfirm}
+				onCancel={() => setConfirmState(null)}
+			/>
+		)}
+
+		{showAddModal && (
+			<AddEntryModal
+				objectName={objectName}
+				fields={dataFields}
+				members={members}
+				onClose={() => setShowAddModal(false)}
+				onSaved={onRefresh}
+			/>
+		)}
 	</>
 	);
 }
