@@ -24,7 +24,12 @@ import {
   ContextMenuShortcut,
 } from "../ui/context-menu";
 import { InlineRename, RENAME_SHAKE_STYLE } from "./inline-rename";
-import { classifyWorkspacePath, fileWriteUrl, isVirtualPath } from "@/lib/workspace-paths";
+import {
+  classifyWorkspacePath,
+  fileWriteUrl,
+  isVirtualPath,
+  toLocalClipboardPath,
+} from "@/lib/workspace-paths";
 
 // --- Types ---
 
@@ -1030,7 +1035,7 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
         }
         case "copy": {
           if (target.kind !== "empty") {
-            await navigator.clipboard.writeText(target.path);
+            await navigator.clipboard.writeText(toLocalClipboardPath(target.path, workspaceRoot));
           }
           break;
         }
@@ -1053,13 +1058,13 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
         case "getInfo": {
           // Future: show info panel. For now, copy path.
           if (target.kind !== "empty") {
-            await navigator.clipboard.writeText(target.path);
+            await navigator.clipboard.writeText(toLocalClipboardPath(target.path, workspaceRoot));
           }
           break;
         }
       }
     },
-    [ctxTarget, tree, onSelect, onRefresh],
+    [ctxTarget, tree, onSelect, onRefresh, workspaceRoot],
   );
 
   // Rename handlers
@@ -1196,7 +1201,7 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
           if (e.metaKey || e.ctrlKey) {
             if (e.key === "c" && curNode) {
               e.preventDefault();
-              void navigator.clipboard.writeText(curNode.path);
+              void navigator.clipboard.writeText(toLocalClipboardPath(curNode.path, workspaceRoot));
             } else if (e.key === "d" && curNode && !isSystemFile(curNode.path, workspaceRoot)) {
               e.preventDefault();
               void apiDuplicate(curNode.path).then(() => onRefresh());

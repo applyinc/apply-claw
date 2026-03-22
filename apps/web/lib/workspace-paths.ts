@@ -28,6 +28,30 @@ export function isBrowsePath(path: string): boolean {
   return kind === "absolute" || kind === "homeRelative";
 }
 
+export function joinWorkspaceRoot(workspaceRoot: string, relativePath: string): string {
+  if (!relativePath) {return workspaceRoot;}
+  return workspaceRoot === "/" ? `/${relativePath}` : `${workspaceRoot}/${relativePath}`;
+}
+
+/** Convert tree paths into real local filesystem paths for clipboard actions. */
+export function toLocalClipboardPath(path: string, workspaceRoot?: string | null): string {
+  const kind = classifyWorkspacePath(path);
+  if (kind === "absolute" || kind === "homeRelative") {return path;}
+  if (kind === "workspaceRelative") {
+    return workspaceRoot ? joinWorkspaceRoot(workspaceRoot, path) : path;
+  }
+  if (!workspaceRoot) {return path;}
+  if (path === "~skills") {return joinWorkspaceRoot(workspaceRoot, "skills");}
+  if (path.startsWith("~skills/")) {
+    return joinWorkspaceRoot(workspaceRoot, `skills/${path.slice("~skills/".length)}`);
+  }
+  if (path === "~workspace") {return workspaceRoot;}
+  if (path.startsWith("~workspace/")) {
+    return joinWorkspaceRoot(workspaceRoot, path.slice("~workspace/".length));
+  }
+  return path;
+}
+
 export function fileReadUrl(path: string): string {
   const kind = classifyWorkspacePath(path);
   if (kind === "virtual") {
