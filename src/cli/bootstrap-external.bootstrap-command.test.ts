@@ -1722,7 +1722,7 @@ describe("bootstrapCommand always-onboard behavior", () => {
     expect(logMessages).toContain("gateway.err.log");
   });
 
-  it("stages elevated commands config in raw JSON before onboard (webchat gets host exec from first boot)", async () => {
+  it("stages exec and elevated commands config in raw JSON before onboard (webchat gets host exec from first boot)", async () => {
     const runtime: RuntimeEnv = {
       log: vi.fn(),
       error: vi.fn(),
@@ -1740,6 +1740,8 @@ describe("bootstrapCommand always-onboard behavior", () => {
 
     const configPath = path.join(stateDir, "openclaw.json");
     const config = JSON.parse(readFileSync(configPath, "utf-8"));
+    expect(config.tools?.exec?.security).toBe("full");
+    expect(config.tools?.exec?.ask).toBe("off");
     expect(config.tools?.elevated?.enabled).toBe(true);
     expect(config.tools?.elevated?.allowFrom?.webchat).toEqual(["*"]);
     expect(config.commands?.bash).toBe(true);
@@ -1759,9 +1761,20 @@ describe("bootstrapCommand always-onboard behavior", () => {
       );
     });
     expect(preOnboardElevatedCliSet).toBe(-1);
+
+    const preOnboardExecCliSet = spawnCalls.findIndex((call, index) => {
+      return (
+        index < onboardIndex &&
+        call.command === "openclaw" &&
+        call.args.includes("config") &&
+        call.args.includes("set") &&
+        (call.args.includes("tools.exec.security") || call.args.includes("tools.exec.ask"))
+      );
+    });
+    expect(preOnboardExecCliSet).toBe(-1);
   });
 
-  it("applies elevated commands via CLI after onboard (prevents onboard wizard drift)", async () => {
+  it("applies exec and elevated commands via CLI after onboard (prevents onboard wizard drift)", async () => {
     const runtime: RuntimeEnv = {
       log: vi.fn(),
       error: vi.fn(),
@@ -1783,6 +1796,8 @@ describe("bootstrapCommand always-onboard behavior", () => {
     expect(onboardIndex).toBeGreaterThan(-1);
 
     const elevatedSettings = [
+      { key: "tools.exec.security", value: "full" },
+      { key: "tools.exec.ask", value: "off" },
       { key: "tools.elevated.enabled", value: "true" },
       { key: "tools.elevated.allowFrom.webchat", value: '["*"]' },
       { key: "agents.defaults.elevatedDefault", value: "on" },
@@ -1847,7 +1862,7 @@ describe("bootstrapCommand always-onboard behavior", () => {
     }
   });
 
-  it("preserves elevated config in final openclaw.json after full bootstrap cycle", async () => {
+  it("preserves exec and elevated config in final openclaw.json after full bootstrap cycle", async () => {
     const runtime: RuntimeEnv = {
       log: vi.fn(),
       error: vi.fn(),
@@ -1866,6 +1881,8 @@ describe("bootstrapCommand always-onboard behavior", () => {
     const configPath = path.join(stateDir, "openclaw.json");
     const finalConfig = JSON.parse(readFileSync(configPath, "utf-8"));
 
+    expect(finalConfig.tools?.exec?.security).toBe("full");
+    expect(finalConfig.tools?.exec?.ask).toBe("off");
     expect(finalConfig.tools?.elevated?.enabled).toBe(true);
     expect(finalConfig.tools?.elevated?.allowFrom?.webchat).toEqual(["*"]);
     expect(finalConfig.agents?.defaults?.elevatedDefault).toBe("on");

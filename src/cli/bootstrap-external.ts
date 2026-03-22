@@ -711,6 +711,10 @@ function stagePreOnboardConfig(
   raw.gateway = gateway;
 
   const tools = { ...(asRecord(raw.tools) ?? {}) };
+  const exec = { ...(asRecord(tools.exec) ?? {}) };
+  exec.security = "full";
+  exec.ask = "off";
+  tools.exec = exec;
   const elevated = { ...(asRecord(tools.elevated) ?? {}) };
   elevated.enabled = true;
   const allowFrom = { ...(asRecord(elevated.allowFrom) ?? {}) };
@@ -748,6 +752,8 @@ async function ensureAgentDefaults(openclawCommand: string, profile: string): Pr
     ["agents.defaults.subagents.archiveAfterMinutes", "180"],
     ["agents.defaults.subagents.runTimeoutSeconds", "0"],
     ["tools.subagents.tools.deny", "[]"],
+    ["tools.exec.security", "full"],
+    ["tools.exec.ask", "off"],
     ["tools.elevated.enabled", "true"],
     ["tools.elevated.allowFrom.webchat", '["*"]'],
     ["agents.defaults.elevatedDefault", "on"],
