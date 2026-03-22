@@ -1,8 +1,5 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
-import { createPortal } from "react-dom";
-
 // --- Types ---
 
 export type ContextMenuAction =
@@ -36,7 +33,7 @@ export type ContextMenuTarget =
 
 // --- Menu item definitions per target kind ---
 
-function getMenuItems(target: ContextMenuTarget): ContextMenuItem[] {
+export function getMenuItems(target: ContextMenuTarget): ContextMenuItem[] {
   const isSystem = target.kind !== "empty" && target.isSystem;
 
   if (target.kind === "file") {
@@ -81,156 +78,11 @@ function getMenuItems(target: ContextMenuTarget): ContextMenuItem[] {
 
 // --- Lock icon for system files ---
 
-function LockIcon() {
+export function LockIcon() {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.5 }}>
       <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
-  );
-}
-
-// --- Context Menu Component ---
-
-type ContextMenuProps = {
-  x: number;
-  y: number;
-  target: ContextMenuTarget;
-  onAction: (action: ContextMenuAction) => void;
-  onClose: () => void;
-};
-
-export function ContextMenu({ x, y, target, onAction, onClose }: ContextMenuProps) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const items = getMenuItems(target);
-  const isSystem = target.kind !== "empty" && target.isSystem;
-
-  // Clamp position to viewport
-  const clampedPos = useRef({ x, y });
-  useEffect(() => {
-    const el = menuRef.current;
-    if (!el) {return;}
-    const rect = el.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let cx = x;
-    let cy = y;
-    if (cx + rect.width > vw - 8) {cx = vw - rect.width - 8;}
-    if (cy + rect.height > vh - 8) {cy = vh - rect.height - 8;}
-    if (cx < 8) {cx = 8;}
-    if (cy < 8) {cy = 8;}
-    clampedPos.current = { x: cx, y: cy };
-    el.style.left = `${cx}px`;
-    el.style.top = `${cy}px`;
-  }, [x, y]);
-
-  // Close on click-outside, escape, scroll
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    }
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {onClose();}
-    }
-    function handleScroll() {
-      onClose();
-    }
-
-    document.addEventListener("mousedown", handleClickOutside, true);
-    document.addEventListener("keydown", handleKeyDown, true);
-    window.addEventListener("scroll", handleScroll, true);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside, true);
-      document.removeEventListener("keydown", handleKeyDown, true);
-      window.removeEventListener("scroll", handleScroll, true);
-    };
-  }, [onClose]);
-
-  const handleItemClick = useCallback(
-    (action: ContextMenuAction, disabled?: boolean) => {
-      if (disabled) {return;}
-      onAction(action);
-      onClose();
-    },
-    [onAction, onClose],
-  );
-
-  return createPortal(
-    <div
-      ref={menuRef}
-      className="fixed z-[9999] min-w-[200px] p-1 rounded-2xl bg-neutral-100/[0.67] dark:bg-neutral-900/[0.67] border border-white dark:border-white/10 backdrop-blur-md shadow-[0_0_25px_0_rgba(0,0,0,0.16)]"
-      style={{
-        left: x,
-        top: y,
-        animation: "contextMenuFadeIn 100ms ease-out",
-      }}
-      role="menu"
-    >
-      {/* System file badge */}
-      {isSystem && (
-        <div
-          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px]"
-          style={{ color: "var(--color-text-muted)" }}
-        >
-          <LockIcon />
-          <span>System file (locked)</span>
-        </div>
-      )}
-
-      {items.map((item, i) => {
-        if ("separator" in item && item.separator) {
-          return (
-            <div
-              key={`sep-${i}`}
-              className="my-0.5 mx-1 h-px bg-neutral-400/15"
-            />
-          );
-        }
-
-        const menuItem = item;
-        const isDisabled = menuItem.disabled;
-
-        return (
-          <button
-            key={menuItem.action}
-            type="button"
-            role="menuitem"
-            disabled={isDisabled}
-            className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-[13px] text-left rounded-xl transition-all ${isDisabled ? "opacity-50" : "hover:bg-neutral-400/15"}`}
-            style={{
-              color: isDisabled
-                ? "var(--color-text-muted)"
-                : menuItem.danger
-                  ? "var(--color-error)"
-                  : "var(--color-text)",
-            }}
-            onClick={() => handleItemClick(menuItem.action, isDisabled)}
-          >
-            {menuItem.icon}
-            <span className="flex-1">{menuItem.label}</span>
-            {isDisabled && isSystem && <LockIcon />}
-            {menuItem.shortcut && (
-              <span
-                className="text-[11px] ml-4"
-                style={{ color: "var(--color-text-muted)" }}
-              >
-                {menuItem.shortcut}
-              </span>
-            )}
-          </button>
-        );
-      })}
-
-      {/* Global animation style */}
-      <style>{`
-        @keyframes contextMenuFadeIn {
-          from { opacity: 0; transform: scale(0.96); }
-          to { opacity: 1; transform: scale(1); }
-        }
-      `}</style>
-    </div>,
-    document.body,
   );
 }

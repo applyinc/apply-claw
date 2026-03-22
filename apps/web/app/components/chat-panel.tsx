@@ -835,6 +835,8 @@ type ChatPanelProps = {
 	gatewaySessionId?: string;
 	/** Channel identifier for the gateway session (e.g. "telegram"). */
 	gatewayChannel?: string;
+	/** Whether this panel's tab is currently visible/active. Used to focus the editor on tab switch. */
+	visible?: boolean;
 };
 
 export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
@@ -861,6 +863,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 			gatewaySessionKey,
 			gatewaySessionId,
 			gatewayChannel: _gatewayChannel,
+			visible,
 		},
 		ref,
 	) {
@@ -883,6 +886,14 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 
 		const [mounted, setMounted] = useState(false);
 		useEffect(() => { setMounted(true); }, []);
+
+		useEffect(() => {
+			if (visible === false) return;
+			const timer = setTimeout(() => {
+				editorRef.current?.focus();
+			}, 150);
+			return () => clearTimeout(timer);
+		}, [visible]);
 
 		// ── Reconnection state ──
 		const [isReconnecting, setIsReconnecting] = useState(false);
@@ -912,32 +923,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 		const [rawView, _setRawView] = useState(false);
 
 		// ── Hero state (new chat screen) ──
-		const [greeting, setGreeting] = useState("How can I help?");
-		const [visiblePrompts, setVisiblePrompts] = useState(PROMPT_SUGGESTIONS.slice(0, 7));
-		const heroInitRef = useRef(false);
-
-		useEffect(() => {
-			if (heroInitRef.current) return;
-			heroInitRef.current = true;
-			const greetings = [
-				"Ready to build?",
-				"Let's automate something?",
-				"What shall we tackle?",
-				"Ready to get things done?",
-				"Let's get to work?",
-				"How can I help?",
-			];
-			const getTimeGreeting = () => {
-				const hour = new Date().getHours();
-				if (hour < 12) return "Good morning!";
-				if (hour < 17) return "Good afternoon!";
-				return "Good evening!";
-			};
-			const allGreetings = [getTimeGreeting(), ...greetings];
-			setGreeting(allGreetings[Math.floor(Math.random() * allGreetings.length)]);
-			const shuffled = [...PROMPT_SUGGESTIONS].sort(() => 0.5 - Math.random());
-			setVisiblePrompts(shuffled.slice(0, 7));
-		}, []);
+		const greeting = "What can I help with?";
+		const visiblePrompts = PROMPT_SUGGESTIONS.slice(0, 7);
 
 		const handlePromptClick = useCallback((promptId: string) => {
 			const prompt = PROMPT_SUGGESTIONS.find((p) => p.id === promptId);
@@ -1751,6 +1738,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 				} else {
 					void sendMessage({ text: messageText });
 				}
+
+				setTimeout(() => {
+					editorRef.current?.focus();
+				}, 200);
 			},
 			[
 				attachedFiles,
@@ -2202,7 +2193,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 								disabled={(editorEmpty && attachedFiles.length === 0) || loadingSession}
 								className={`${compact ? "w-6 h-6" : "w-7 h-7"} rounded-full flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed`}
 								style={{
-									background: !editorEmpty || attachedFiles.length > 0 ? "var(--color-accent)" : "var(--color-text-muted)",
+									background: !editorEmpty || attachedFiles.length > 0 ? "linear-gradient(to top, #0065A2, #0075AA)" : "var(--color-text-muted)",
 									color: !editorEmpty || attachedFiles.length > 0 ? "white" : "var(--color-bg)",
 								}}
 								title="Send message"

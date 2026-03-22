@@ -434,7 +434,7 @@ export function WorkspaceSidebar({
 			style={{
 				width: typeof width === "number" ? `${width}px` : width,
 				minWidth: typeof width === "number" ? `${width}px` : width,
-				background: "var(--color-sidebar-bg)",
+				background: "var(--color-bg)",
 				borderColor: "var(--color-border)",
 			}}
 		>

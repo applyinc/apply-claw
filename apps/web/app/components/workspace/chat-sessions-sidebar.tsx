@@ -778,12 +778,12 @@ export function ChatSessionsSidebar({
 
 			{/* Header */}
 			<div
-				className={`absolute top-0 left-0 right-0 z-10 backdrop-blur-md ${embedded ? "" : "border-b"}`}
-				style={{
-					borderColor: embedded ? undefined : "var(--color-border)",
-					background: "var(--color-sidebar-bg)",
-					boxShadow: embedded ? "inset 0 -1px 0 0 var(--color-border)" : undefined,
-				}}
+			className={`absolute top-0 left-0 right-0 z-10 backdrop-blur-md ${embedded ? "" : "border-b"}`}
+			style={{
+				borderColor: embedded ? undefined : "var(--color-border)",
+				background: "color-mix(in srgb, var(--color-bg) 80%, transparent)",
+				boxShadow: embedded ? "inset 0 -1px 0 0 var(--color-border)" : undefined,
+			}}
 			>
 				<div className="flex items-center justify-between px-4" style={{ height: headerHeight }}>
 					<div className="min-w-0 flex-1 flex items-center gap-1.5">

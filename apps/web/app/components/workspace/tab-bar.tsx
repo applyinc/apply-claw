@@ -1,8 +1,16 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { type Tab, HOME_TAB_ID } from "@/lib/tab-state";
 import dynamic from "next/dynamic";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+} from "../ui/context-menu";
 
 const Tabs = dynamic(
   () => import("@sinm/react-chrome-tabs").then((mod) => mod.Tabs),
@@ -27,12 +35,6 @@ type TabBarProps = {
   leftContent?: React.ReactNode;
   rightContent?: React.ReactNode;
 };
-
-type ContextMenuState = {
-  tabId: string;
-  x: number;
-  y: number;
-} | null;
 
 function tabToFaviconClass(tab: Tab, isLive: boolean): string | undefined {
   switch (tab.type) {
@@ -68,8 +70,10 @@ export function TabBar({
   leftContent,
   rightContent,
 }: TabBarProps) {
-  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+  const [contextTabId, setContextTabId] = useState<string | null>(null);
   const [isDark, setIsDark] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const rightClickTimeRef = useRef(0);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -82,21 +86,22 @@ export function TabBar({
   }, []);
 
   useEffect(() => {
-    if (!contextMenu) return;
-    const close = () => setContextMenu(null);
-    window.addEventListener("click", close);
-    window.addEventListener("contextmenu", close);
-    return () => {
-      window.removeEventListener("click", close);
-      window.removeEventListener("contextmenu", close);
+    const blockRightClick = (e: PointerEvent | MouseEvent) => {
+      if (e.button === 2) {
+        const tab = (e.target as Element).closest?.(".chrome-tab");
+        if (tab && wrapperRef.current?.contains(tab)) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          rightClickTimeRef.current = Date.now();
+        }
+      }
     };
-  }, [contextMenu]);
-
-  const handleContextMenu = useCallback((tabId: string, event: MouseEvent) => {
-    if (!tabId || tabId === HOME_TAB_ID) return;
-    event.preventDefault();
-    event.stopPropagation();
-    setContextMenu({ tabId, x: event.clientX, y: event.clientY });
+    document.addEventListener("pointerdown", blockRightClick, true);
+    document.addEventListener("mousedown", blockRightClick, true);
+    return () => {
+      document.removeEventListener("pointerdown", blockRightClick, true);
+      document.removeEventListener("mousedown", blockRightClick, true);
+    };
   }, []);
 
   const homeTab = tabs.find((t) => t.id === HOME_TAB_ID);
@@ -113,7 +118,10 @@ export function TabBar({
     }));
   }, [nonHomeTabs, activeTabId, liveChatTabIds]);
 
-  const handleActive = useCallback((id: string) => onActivate(id), [onActivate]);
+  const handleActive = useCallback((id: string) => {
+    if (Date.now() - rightClickTimeRef.current < 200) return;
+    onActivate(id);
+  }, [onActivate]);
   const handleClose = useCallback((id: string) => onClose(id), [onClose]);
   const handleReorder = useCallback(
     (tabId: string, _fromIndex: number, toIndex: number) => {
@@ -123,36 +131,50 @@ export function TabBar({
     [tabs, onReorder],
   );
 
+  const handleWrapperContextMenu = useCallback((e: React.MouseEvent) => {
+    const tabEl = (e.target as Element).closest?.(".chrome-tab");
+    if (tabEl) {
+      const tabId = tabEl.getAttribute("data-tab-id");
+      if (tabId && tabId !== HOME_TAB_ID) {
+        tabEl.setAttribute("data-context", "true");
+        setContextTabId(tabId);
+        return;
+      }
+    }
+    e.preventDefault();
+  }, []);
+
   if (tabs.length === 0) return null;
 
-  const contextTab = contextMenu ? tabs.find((t) => t.id === contextMenu.tabId) : null;
+  const contextTab = contextTabId ? tabs.find((t) => t.id === contextTabId) : null;
 
   return (
-    <>
-      <div className="dench-chrome-tabs-wrapper flex items-center shrink-0 relative">
-        {leftContent && (
-          <div className="flex items-center px-1.5 shrink-0 z-10">
-            {leftContent}
-          </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <Tabs
-            darkMode={isDark}
-            tabs={chromeTabs}
-            draggable
-            onTabActive={handleActive}
-            onTabClose={handleClose}
-            onTabReorder={handleReorder}
-            onContextMenu={handleContextMenu}
-            pinnedRight={onNewTab ? (
-              <div className="flex items-center gap-1.5 ml-1.5">
-                {nonHomeTabs.length > 0 && nonHomeTabs[nonHomeTabs.length - 1].id !== activeTabId && (
-                  <div className="w-px h-4 shrink-0" style={{ background: "var(--color-border)" }} />
-                )}
+    <ContextMenu onOpenChange={(open) => {
+      if (!open) {
+        wrapperRef.current?.querySelector("[data-context]")?.removeAttribute("data-context");
+        setContextTabId(null);
+      }
+    }}>
+      <ContextMenuTrigger asChild>
+        <div ref={wrapperRef} className="dench-chrome-tabs-wrapper flex items-center shrink-0 relative" onContextMenu={handleWrapperContextMenu}>
+          {leftContent && (
+            <div className="flex items-center px-1.5 shrink-0 z-10">
+              {leftContent}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <Tabs
+              darkMode={isDark}
+              tabs={chromeTabs}
+              draggable
+              onTabActive={handleActive}
+              onTabClose={handleClose}
+              onTabReorder={handleReorder}
+              pinnedRight={onNewTab ? (
                 <button
                   type="button"
                   onClick={onNewTab}
-                  className="flex items-center justify-center w-7 h-7 rounded-full shrink-0 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                  className="flex items-center justify-center w-7 h-7 rounded-full shrink-0 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5 ml-2"
                   style={{ color: "var(--color-text-muted)" }}
                   title="New chat"
                 >
@@ -160,86 +182,49 @@ export function TabBar({
                     <path d="M12 5v14" /><path d="M5 12h14" />
                   </svg>
                 </button>
-              </div>
-            ) : undefined}
-          />
-        </div>
-        {rightContent && (
-          <div className="flex items-center gap-0.5 px-2 shrink-0 z-10">
-            {rightContent}
+              ) : undefined}
+            />
           </div>
-        )}
-      </div>
+          {rightContent && (
+            <div className="flex items-center gap-0.5 px-2 shrink-0 z-10">
+              {rightContent}
+            </div>
+          )}
+        </div>
+      </ContextMenuTrigger>
 
-      {/* Context menu */}
-      {contextMenu && contextTab && (
-        <div
-          className="fixed z-9999 min-w-[180px] rounded-2xl p-1 bg-neutral-100/67 dark:bg-neutral-900/67 border border-white dark:border-white/10 backdrop-blur-md shadow-[0_0_25px_0_rgba(0,0,0,0.16)]"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-        >
-          <ContextMenuItem
-            label={contextTab.pinned ? "Unpin Tab" : "Pin Tab"}
-            onClick={() => { onTogglePin(contextMenu.tabId); setContextMenu(null); }}
-          />
-          {contextTab.type === "chat" && liveChatTabIds?.has(contextMenu.tabId) && onStopTab && (
+      {contextTab && (
+        <ContextMenuContent className="min-w-[180px]">
+          <ContextMenuItem onSelect={() => onTogglePin(contextTab.id)}>
+            {contextTab.pinned ? "Unpin Tab" : "Pin Tab"}
+          </ContextMenuItem>
+          {contextTab.type === "chat" && liveChatTabIds?.has(contextTab.id) && onStopTab && (
             <>
-              <div className="h-px my-0.5 mx-1 bg-neutral-400/15" />
-              <ContextMenuItem
-                label="Stop Session"
-                onClick={() => { onStopTab(contextMenu.tabId); setContextMenu(null); }}
-              />
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={() => onStopTab(contextTab.id)}>
+                Stop Session
+              </ContextMenuItem>
             </>
           )}
-          <div className="h-px my-0.5 mx-1 bg-neutral-400/15" />
+          <ContextMenuSeparator />
           <ContextMenuItem
-            label="Close"
-            shortcut="⌘W"
             disabled={contextTab.pinned}
-            onClick={() => { onClose(contextMenu.tabId); setContextMenu(null); }}
-          />
-          <ContextMenuItem
-            label="Close Others"
-            onClick={() => { onCloseOthers(contextMenu.tabId); setContextMenu(null); }}
-          />
-          <ContextMenuItem
-            label="Close to the Right"
-            onClick={() => { onCloseToRight(contextMenu.tabId); setContextMenu(null); }}
-          />
-          <ContextMenuItem
-            label="Close All"
-            onClick={() => { onCloseAll(); setContextMenu(null); }}
-          />
-        </div>
+            onSelect={() => onClose(contextTab.id)}
+          >
+            Close
+            <ContextMenuShortcut>⌘W</ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onCloseOthers(contextTab.id)}>
+            Close Others
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onCloseToRight(contextTab.id)}>
+            Close to the Right
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onCloseAll()}>
+            Close All
+          </ContextMenuItem>
+        </ContextMenuContent>
       )}
-    </>
-  );
-}
-
-function ContextMenuItem({
-  label,
-  shortcut,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  shortcut?: string;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="w-full flex items-center justify-between px-2.5 py-1.5 text-[12.5px] text-left rounded-xl transition-all disabled:opacity-40 hover:bg-neutral-400/15"
-      style={{ color: "var(--color-text)" }}
-    >
-      <span>{label}</span>
-      {shortcut && (
-        <span className="ml-4 text-[11px]" style={{ color: "var(--color-text-muted)" }}>
-          {shortcut}
-        </span>
-      )}
-    </button>
+    </ContextMenu>
   );
 }
