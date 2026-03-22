@@ -923,32 +923,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 		const [rawView, _setRawView] = useState(false);
 
 		// ── Hero state (new chat screen) ──
-		const [greeting, setGreeting] = useState("How can I help?");
-		const [visiblePrompts, setVisiblePrompts] = useState(PROMPT_SUGGESTIONS.slice(0, 7));
-		const heroInitRef = useRef(false);
-
-		useEffect(() => {
-			if (heroInitRef.current) return;
-			heroInitRef.current = true;
-			const greetings = [
-				"Ready to build?",
-				"Let's automate something?",
-				"What shall we tackle?",
-				"Ready to get things done?",
-				"Let's get to work?",
-				"How can I help?",
-			];
-			const getTimeGreeting = () => {
-				const hour = new Date().getHours();
-				if (hour < 12) return "Good morning!";
-				if (hour < 17) return "Good afternoon!";
-				return "Good evening!";
-			};
-			const allGreetings = [getTimeGreeting(), ...greetings];
-			setGreeting(allGreetings[Math.floor(Math.random() * allGreetings.length)]);
-			const shuffled = [...PROMPT_SUGGESTIONS].sort(() => 0.5 - Math.random());
-			setVisiblePrompts(shuffled.slice(0, 7));
-		}, []);
+		const greeting = "What can I help with?";
+		const visiblePrompts = PROMPT_SUGGESTIONS.slice(0, 7);
 
 		const handlePromptClick = useCallback((promptId: string) => {
 			const prompt = PROMPT_SUGGESTIONS.find((p) => p.id === promptId);

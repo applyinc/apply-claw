@@ -2452,9 +2452,19 @@ function WorkspacePageInner() {
                 onTogglePin={handleTabTogglePin}
                 liveChatTabIds={liveChatTabIds}
                 onStopTab={handleStopChatTab}
-                onNewTab={openBlankChatTab}
                 rightContent={showMainChat ? (
                   <>
+                    <button
+                      type="button"
+                      onClick={openBlankChatTab}
+                      className="flex items-center justify-center w-7 h-7 rounded-full shrink-0 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5"
+                      style={{ color: "var(--color-text-muted)" }}
+                      title="New chat"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M12 5v14" /><path d="M5 12h14" />
+                      </svg>
+                    </button>
                     {visibleMainChatTabId && liveChatTabIds.has(visibleMainChatTabId) && (
                       <button
                         type="button"
