@@ -4,13 +4,13 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { type Tab, HOME_TAB_ID } from "@/lib/tab-state";
 import dynamic from "next/dynamic";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuShortcut,
-} from "../ui/dropdown-menu";
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+} from "../ui/context-menu";
 
 const Tabs = dynamic(
   () => import("@sinm/react-chrome-tabs").then((mod) => mod.Tabs),
@@ -35,12 +35,6 @@ type TabBarProps = {
   leftContent?: React.ReactNode;
   rightContent?: React.ReactNode;
 };
-
-type ContextMenuState = {
-  tabId: string;
-  x: number;
-  y: number;
-} | null;
 
 function tabToFaviconClass(tab: Tab, isLive: boolean): string | undefined {
   switch (tab.type) {
@@ -76,7 +70,7 @@ export function TabBar({
   leftContent,
   rightContent,
 }: TabBarProps) {
-  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+  const [contextTabId, setContextTabId] = useState<string | null>(null);
   const [isDark, setIsDark] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const rightClickTimeRef = useRef(0);
@@ -110,15 +104,6 @@ export function TabBar({
     };
   }, []);
 
-  const handleContextMenu = useCallback((tabId: string, event: MouseEvent) => {
-    if (!tabId || tabId === HOME_TAB_ID) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const tabEl = (event.target as Element).closest?.(".chrome-tab");
-    if (tabEl) tabEl.setAttribute("data-context", "true");
-    setContextMenu({ tabId, x: event.clientX, y: event.clientY });
-  }, []);
-
   const homeTab = tabs.find((t) => t.id === HOME_TAB_ID);
   const nonHomeTabs = useMemo(() => tabs.filter((t) => t.id !== HOME_TAB_ID), [tabs]);
 
@@ -146,92 +131,100 @@ export function TabBar({
     [tabs, onReorder],
   );
 
+  const handleWrapperContextMenu = useCallback((e: React.MouseEvent) => {
+    const tabEl = (e.target as Element).closest?.(".chrome-tab");
+    if (tabEl) {
+      const tabId = tabEl.getAttribute("data-tab-id");
+      if (tabId && tabId !== HOME_TAB_ID) {
+        tabEl.setAttribute("data-context", "true");
+        setContextTabId(tabId);
+        return;
+      }
+    }
+    e.preventDefault();
+  }, []);
+
   if (tabs.length === 0) return null;
 
-  const contextTab = contextMenu ? tabs.find((t) => t.id === contextMenu.tabId) : null;
+  const contextTab = contextTabId ? tabs.find((t) => t.id === contextTabId) : null;
 
   return (
-    <>
-      <div ref={wrapperRef} className="dench-chrome-tabs-wrapper flex items-center shrink-0 relative">
-        {leftContent && (
-          <div className="flex items-center px-1.5 shrink-0 z-10">
-            {leftContent}
+    <ContextMenu onOpenChange={(open) => {
+      if (!open) {
+        wrapperRef.current?.querySelector("[data-context]")?.removeAttribute("data-context");
+        setContextTabId(null);
+      }
+    }}>
+      <ContextMenuTrigger asChild>
+        <div ref={wrapperRef} className="dench-chrome-tabs-wrapper flex items-center shrink-0 relative" onContextMenu={handleWrapperContextMenu}>
+          {leftContent && (
+            <div className="flex items-center px-1.5 shrink-0 z-10">
+              {leftContent}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <Tabs
+              darkMode={isDark}
+              tabs={chromeTabs}
+              draggable
+              onTabActive={handleActive}
+              onTabClose={handleClose}
+              onTabReorder={handleReorder}
+              pinnedRight={onNewTab ? (
+                <button
+                  type="button"
+                  onClick={onNewTab}
+                  className="flex items-center justify-center w-7 h-7 rounded-full shrink-0 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5 ml-2"
+                  style={{ color: "var(--color-text-muted)" }}
+                  title="New chat"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 5v14" /><path d="M5 12h14" />
+                  </svg>
+                </button>
+              ) : undefined}
+            />
           </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <Tabs
-            darkMode={isDark}
-            tabs={chromeTabs}
-            draggable
-            onTabActive={handleActive}
-            onTabClose={handleClose}
-            onTabReorder={handleReorder}
-            onContextMenu={handleContextMenu}
-            pinnedRight={onNewTab ? (
-              <button
-                type="button"
-                onClick={onNewTab}
-                className="flex items-center justify-center w-7 h-7 rounded-full shrink-0 cursor-pointer transition-colors hover:bg-black/5 dark:hover:bg-white/5 ml-2"
-                style={{ color: "var(--color-text-muted)" }}
-                title="New chat"
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 5v14" /><path d="M5 12h14" />
-                </svg>
-              </button>
-            ) : undefined}
-          />
+          {rightContent && (
+            <div className="flex items-center gap-0.5 px-2 shrink-0 z-10">
+              {rightContent}
+            </div>
+          )}
         </div>
-        {rightContent && (
-          <div className="flex items-center gap-0.5 px-2 shrink-0 z-10">
-            {rightContent}
-          </div>
-        )}
-      </div>
+      </ContextMenuTrigger>
 
-      {contextMenu && contextTab && (
-        <DropdownMenu open onOpenChange={(open) => {
-          if (!open) {
-            wrapperRef.current?.querySelector("[data-context]")?.removeAttribute("data-context");
-            setContextMenu(null);
-          }
-        }}>
-          <DropdownMenuTrigger
-            className="fixed w-0 h-0 opacity-0"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-          />
-          <DropdownMenuContent align="start" side="bottom" className="min-w-[180px]">
-            <DropdownMenuItem onSelect={() => { onTogglePin(contextMenu.tabId); setContextMenu(null); }}>
-              {contextTab.pinned ? "Unpin Tab" : "Pin Tab"}
-            </DropdownMenuItem>
-            {contextTab.type === "chat" && liveChatTabIds?.has(contextMenu.tabId) && onStopTab && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => { onStopTab(contextMenu.tabId); setContextMenu(null); }}>
-                  Stop Session
-                </DropdownMenuItem>
-              </>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              disabled={contextTab.pinned}
-              onSelect={() => { onClose(contextMenu.tabId); setContextMenu(null); }}
-            >
-              Close
-              <DropdownMenuShortcut>⌘W</DropdownMenuShortcut>
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => { onCloseOthers(contextMenu.tabId); setContextMenu(null); }}>
-              Close Others
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => { onCloseToRight(contextMenu.tabId); setContextMenu(null); }}>
-              Close to the Right
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => { onCloseAll(); setContextMenu(null); }}>
-              Close All
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      {contextTab && (
+        <ContextMenuContent className="min-w-[180px]">
+          <ContextMenuItem onSelect={() => onTogglePin(contextTab.id)}>
+            {contextTab.pinned ? "Unpin Tab" : "Pin Tab"}
+          </ContextMenuItem>
+          {contextTab.type === "chat" && liveChatTabIds?.has(contextTab.id) && onStopTab && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onSelect={() => onStopTab(contextTab.id)}>
+                Stop Session
+              </ContextMenuItem>
+            </>
+          )}
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            disabled={contextTab.pinned}
+            onSelect={() => onClose(contextTab.id)}
+          >
+            Close
+            <ContextMenuShortcut>⌘W</ContextMenuShortcut>
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onCloseOthers(contextTab.id)}>
+            Close Others
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onCloseToRight(contextTab.id)}>
+            Close to the Right
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => onCloseAll()}>
+            Close All
+          </ContextMenuItem>
+        </ContextMenuContent>
       )}
-    </>
+    </ContextMenu>
   );
 }

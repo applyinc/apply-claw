@@ -14,7 +14,7 @@
   --color-surface: #ffffff;
   --color-sidebar-bg: #ebebea;
   --color-main-bg: #fafaf9;
-  --color-surface-hover: #e2e1df;
+  --color-surface-hover: rgba(231, 229, 228, 0.65);
   --color-surface-raised: #ffffff;
 
   /* Borders */

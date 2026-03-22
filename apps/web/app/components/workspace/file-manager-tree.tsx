@@ -14,7 +14,15 @@ import {
   useSensor,
   useSensors,
 } from "@dnd-kit/core";
-import { ContextMenu, type ContextMenuAction, type ContextMenuTarget } from "./context-menu";
+import { type ContextMenuAction, type ContextMenuTarget, getMenuItems, LockIcon } from "./context-menu";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+} from "../ui/context-menu";
 import { InlineRename, RENAME_SHAKE_STYLE } from "./inline-rename";
 import { classifyWorkspacePath, fileWriteUrl, isVirtualPath } from "@/lib/workspace-paths";
 
@@ -509,8 +517,6 @@ function DraggableNode({
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
       onNodeSelect(node.path);
       onContextMenu(e, node);
     },
@@ -836,7 +842,8 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
   useEffect(() => removePointerTracker, [removePointerTracker]);
 
   // Context menu state
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; target: ContextMenuTarget } | null>(null);
+  const [ctxTarget, setCtxTarget] = useState<ContextMenuTarget>({ kind: "empty" });
+  const ctxEventIdRef = useRef<number>(0);
 
   // Confirm dialog
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
@@ -976,34 +983,29 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
     removePointerTracker();
   }, [removePointerTracker]);
 
-  // Context menu handlers
+  // Context menu handlers — first (deepest) node wins per event
   const handleContextMenu = useCallback((e: React.MouseEvent, node: TreeNode) => {
+    if (ctxEventIdRef.current === e.timeStamp) return;
+    ctxEventIdRef.current = e.timeStamp;
     const isSys = isSystemFile(node.path, workspaceRoot) || isVirtualNode(node);
     const isFolder = node.type === "folder" || node.type === "object";
-    setCtxMenu({
-      x: e.clientX,
-      y: e.clientY,
-      target: {
-        kind: isFolder ? "folder" : "file",
-        path: node.path,
-        name: node.name,
-        isSystem: isSys,
-      },
+    setCtxTarget({
+      kind: isFolder ? "folder" : "file",
+      path: node.path,
+      name: node.name,
+      isSystem: isSys,
     });
   }, [workspaceRoot]);
 
   const handleEmptyContextMenu = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setCtxMenu({
-      x: e.clientX,
-      y: e.clientY,
-      target: { kind: "empty" },
-    });
+    if (ctxEventIdRef.current === e.timeStamp) return;
+    ctxEventIdRef.current = e.timeStamp;
+    setCtxTarget({ kind: "empty" });
   }, []);
 
   const handleContextMenuAction = useCallback(
     async (action: ContextMenuAction) => {
-      const target = ctxMenu?.target;
+      const target = ctxTarget;
       if (!target) {return;}
 
       switch (action) {
@@ -1058,7 +1060,7 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
         }
       }
     },
-    [ctxMenu, tree, onSelect, onRefresh],
+    [ctxTarget, tree, onSelect, onRefresh],
   );
 
   // Rename handlers
@@ -1222,21 +1224,17 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
 
   if (tree.length === 0) {
     return (
-      <div
-        className="px-4 py-6 text-center text-sm"
-        style={{ color: "var(--color-text-muted)" }}
-        onContextMenu={handleEmptyContextMenu}
-      >
-        No files in workspace
-        {ctxMenu && (
-          <ContextMenu
-            x={ctxMenu.x}
-            y={ctxMenu.y}
-            target={ctxMenu.target}
-            onAction={handleContextMenuAction}
-            onClose={() => setCtxMenu(null)}
-          />
-        )}
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            className="px-4 py-6 text-center text-sm"
+            style={{ color: "var(--color-text-muted)" }}
+            onContextMenu={handleEmptyContextMenu}
+          >
+            No files in workspace
+          </div>
+        </ContextMenuTrigger>
+        <FileContextMenuContent target={ctxTarget} onAction={handleContextMenuAction} />
         {newItemPrompt && (
           <NewItemPrompt
             kind={newItemPrompt.kind}
@@ -1245,7 +1243,7 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
             onCancel={() => setNewItemPrompt(null)}
           />
         )}
-      </div>
+      </ContextMenu>
     );
   }
 
@@ -1258,84 +1256,78 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <div
-        ref={containerRef}
-        className="py-1 outline-none flex flex-col min-h-full"
-        tabIndex={0}
-        role="tree"
-        onKeyDown={handleKeyDown}
-        onContextMenu={handleEmptyContextMenu}
-      >
-        {/* ".." navigation entry for browsing up */}
-        {parentDir != null && onNavigateUp && (
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
           <div
-            role="treeitem"
-            tabIndex={-1}
-            onClick={onNavigateUp}
-            className="w-full flex items-center gap-1.5 py-1 px-2 rounded-md text-left text-sm transition-all duration-100 cursor-pointer select-none"
-            style={{
-              paddingLeft: "8px",
-              color: "var(--color-text-muted)",
-              borderRadius: "6px",
-            }}
-            onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "var(--color-surface-hover)";
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.background = "transparent";
-            }}
+            ref={containerRef}
+            className="py-1 outline-none flex flex-col min-h-full"
+            tabIndex={0}
+            role="tree"
+            onKeyDown={handleKeyDown}
+            onContextMenu={handleEmptyContextMenu}
           >
-            <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m15 18-6-6 6-6" />
-              </svg>
-            </span>
-            <span className="flex-shrink-0 flex items-center" style={{ color: "var(--color-text-muted)" }}>
-              <FolderIcon />
-            </span>
-            <span className="truncate flex-1">..</span>
+            {/* ".." navigation entry for browsing up */}
+            {parentDir != null && onNavigateUp && (
+              <div
+                role="treeitem"
+                tabIndex={-1}
+                onClick={onNavigateUp}
+                className="w-full flex items-center gap-1.5 py-1 px-2 rounded-md text-left text-sm transition-all duration-100 cursor-pointer select-none"
+                style={{
+                  paddingLeft: "8px",
+                  color: "var(--color-text-muted)",
+                  borderRadius: "6px",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "var(--color-surface-hover)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "transparent";
+                }}
+              >
+                <span className="flex-shrink-0 w-4 h-4 flex items-center justify-center">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="m15 18-6-6 6-6" />
+                  </svg>
+                </span>
+                <span className="flex-shrink-0 flex items-center" style={{ color: "var(--color-text-muted)" }}>
+                  <FolderIcon />
+                </span>
+                <span className="truncate flex-1">..</span>
+              </div>
+            )}
+            {tree.map((node) => (
+              <DraggableNode
+                key={node.path}
+                node={node}
+                depth={0}
+                activePath={activePath}
+                selectedPath={selectedPath}
+                onSelect={onSelect}
+                onNodeSelect={setSelectedPath}
+                expandedPaths={expandedPaths}
+                onToggleExpand={handleToggleExpand}
+                renamingPath={renamingPath}
+                onStartRename={setRenamingPath}
+                onCommitRename={handleCommitRename}
+                onCancelRename={handleCancelRename}
+                onContextMenu={handleContextMenu}
+                compact={compact}
+                dragOverPath={dragOverPath}
+                workspaceRoot={workspaceRoot}
+              />
+            ))}
+            {/* Root-level drop zone: fills remaining space so items can be moved to root */}
+            <RootDropZone isDragging={!!activeNode} />
           </div>
-        )}
-        {tree.map((node) => (
-          <DraggableNode
-            key={node.path}
-            node={node}
-            depth={0}
-            activePath={activePath}
-            selectedPath={selectedPath}
-            onSelect={onSelect}
-            onNodeSelect={setSelectedPath}
-            expandedPaths={expandedPaths}
-            onToggleExpand={handleToggleExpand}
-            renamingPath={renamingPath}
-            onStartRename={setRenamingPath}
-            onCommitRename={handleCommitRename}
-            onCancelRename={handleCancelRename}
-            onContextMenu={handleContextMenu}
-            compact={compact}
-            dragOverPath={dragOverPath}
-            workspaceRoot={workspaceRoot}
-          />
-        ))}
-        {/* Root-level drop zone: fills remaining space so items can be moved to root */}
-        <RootDropZone isDragging={!!activeNode} />
-      </div>
+        </ContextMenuTrigger>
+        <FileContextMenuContent target={ctxTarget} onAction={handleContextMenuAction} />
+      </ContextMenu>
 
       {/* Drag overlay (ghost) — pointer-events:none so elementFromPoint sees through it */}
       <DragOverlay dropAnimation={null} style={{ pointerEvents: "none" }}>
         {activeNode ? <DragOverlayContent node={activeNode} /> : null}
       </DragOverlay>
-
-      {/* Context menu */}
-      {ctxMenu && (
-        <ContextMenu
-          x={ctxMenu.x}
-          y={ctxMenu.y}
-          target={ctxMenu.target}
-          onAction={handleContextMenuAction}
-          onClose={() => setCtxMenu(null)}
-        />
-      )}
 
       {/* Delete confirmation dialog */}
       {confirmDelete && (
@@ -1359,5 +1351,52 @@ export function FileManagerTree({ tree, activePath, onSelect, onRefresh, compact
       {/* Inject animation styles */}
       <style>{RENAME_SHAKE_STYLE}</style>
     </DndContext>
+  );
+}
+
+// --- Radix context menu content for file tree ---
+
+function FileContextMenuContent({
+  target,
+  onAction,
+}: {
+  target: ContextMenuTarget;
+  onAction: (action: ContextMenuAction) => void;
+}) {
+  const items = getMenuItems(target);
+  const isSystem = target.kind !== "empty" && target.isSystem;
+
+  return (
+    <ContextMenuContent className="min-w-[200px]">
+      {isSystem && (
+        <div
+          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px]"
+          style={{ color: "var(--color-text-muted)" }}
+        >
+          <LockIcon />
+          <span>System file (locked)</span>
+        </div>
+      )}
+      {items.map((item, i) => {
+        if ("separator" in item && item.separator) {
+          return <ContextMenuSeparator key={`sep-${i}`} />;
+        }
+        return (
+          <ContextMenuItem
+            key={item.action}
+            variant={item.danger ? "destructive" : "default"}
+            disabled={item.disabled}
+            onSelect={() => onAction(item.action)}
+          >
+            {item.icon}
+            <span className="flex-1">{item.label}</span>
+            {item.disabled && isSystem && <LockIcon />}
+            {item.shortcut && (
+              <ContextMenuShortcut>{item.shortcut}</ContextMenuShortcut>
+            )}
+          </ContextMenuItem>
+        );
+      })}
+    </ContextMenuContent>
   );
 }
