@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { type Tab, HOME_TAB_ID } from "@/lib/tab-state";
 import dynamic from "next/dynamic";
 import {
@@ -78,6 +78,8 @@ export function TabBar({
 }: TabBarProps) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [isDark, setIsDark] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const rightClickTimeRef = useRef(0);
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -89,10 +91,31 @@ export function TabBar({
     return () => { mq.removeEventListener("change", handler); obs.disconnect(); };
   }, []);
 
+  useEffect(() => {
+    const blockRightClick = (e: PointerEvent | MouseEvent) => {
+      if (e.button === 2) {
+        const tab = (e.target as Element).closest?.(".chrome-tab");
+        if (tab && wrapperRef.current?.contains(tab)) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          rightClickTimeRef.current = Date.now();
+        }
+      }
+    };
+    document.addEventListener("pointerdown", blockRightClick, true);
+    document.addEventListener("mousedown", blockRightClick, true);
+    return () => {
+      document.removeEventListener("pointerdown", blockRightClick, true);
+      document.removeEventListener("mousedown", blockRightClick, true);
+    };
+  }, []);
+
   const handleContextMenu = useCallback((tabId: string, event: MouseEvent) => {
     if (!tabId || tabId === HOME_TAB_ID) return;
     event.preventDefault();
     event.stopPropagation();
+    const tabEl = wrapperRef.current?.querySelector(`[data-tab-id="${tabId}"]`);
+    if (tabEl) tabEl.setAttribute("data-context", "true");
     setContextMenu({ tabId, x: event.clientX, y: event.clientY });
   }, []);
 
@@ -110,7 +133,10 @@ export function TabBar({
     }));
   }, [nonHomeTabs, activeTabId, liveChatTabIds]);
 
-  const handleActive = useCallback((id: string) => onActivate(id), [onActivate]);
+  const handleActive = useCallback((id: string) => {
+    if (Date.now() - rightClickTimeRef.current < 200) return;
+    onActivate(id);
+  }, [onActivate]);
   const handleClose = useCallback((id: string) => onClose(id), [onClose]);
   const handleReorder = useCallback(
     (tabId: string, _fromIndex: number, toIndex: number) => {
@@ -126,7 +152,7 @@ export function TabBar({
 
   return (
     <>
-      <div className="dench-chrome-tabs-wrapper flex items-center shrink-0 relative">
+      <div ref={wrapperRef} className="dench-chrome-tabs-wrapper flex items-center shrink-0 relative">
         {leftContent && (
           <div className="flex items-center px-1.5 shrink-0 z-10">
             {leftContent}
@@ -164,7 +190,12 @@ export function TabBar({
       </div>
 
       {contextMenu && contextTab && (
-        <DropdownMenu open onOpenChange={(open) => { if (!open) setContextMenu(null); }}>
+        <DropdownMenu open onOpenChange={(open) => {
+          if (!open) {
+            wrapperRef.current?.querySelector("[data-context]")?.removeAttribute("data-context");
+            setContextMenu(null);
+          }
+        }}>
           <DropdownMenuTrigger
             className="fixed w-0 h-0 opacity-0"
             style={{ left: contextMenu.x, top: contextMenu.y }}

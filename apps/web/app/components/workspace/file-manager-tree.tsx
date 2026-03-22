@@ -494,9 +494,10 @@ function DraggableNode({
 
   const handleClick = useCallback(() => {
     onNodeSelect(node.path);
-    onSelect(node);
     if (isExpandable) {
       onToggleExpand(node.path);
+    } else {
+      onSelect(node);
     }
   }, [node, isExpandable, onSelect, onNodeSelect, onToggleExpand]);
 
