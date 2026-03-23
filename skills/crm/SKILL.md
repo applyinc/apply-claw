@@ -95,6 +95,51 @@ Never rename partially. If you can't complete all steps, don't start the rename 
 - **DuckDB SQL errors**: See the "Common DuckDB Pitfalls" section in the **duckdb-operations** child skill. The most frequent causes: unquoted field names with spaces (use `"Full Name"` not `Full Name`), wrong transaction syntax (`BEGIN TRANSACTION` not `BEGIN`), unescaped single quotes, and PIVOT views without the `IN (...)` field list.
 - **"Script not found" on action buttons**: The `.actions/` directory and/or script files were not created. See the **actions** child skill post-creation checklist.
 
+## Relation Fields — Link Objects Automatically
+
+**Every time you create or modify objects, check whether relation fields should connect them. Do NOT wait for the user to ask — proactively link objects that are obviously related.**
+
+Relation fields (`type: "relation"`) let an entry in one object reference an entry in another. They render as a searchable dropdown in the UI and are the backbone of any useful CRM.
+
+### Mandatory auto-linking rules
+
+When you create an object, scan all existing objects (run `SELECT name FROM objects`) and add relation fields for every obvious link:
+
+| If you're creating... | And this object exists... | Auto-create this relation field |
+|---|---|---|
+| people / contact | company | "Company" on people → company (`many_to_one`) |
+| lead / prospect | company | "Company" on lead → company (`many_to_one`) |
+| deal / opportunity | people | "Primary Contact" on deal → people (`many_to_one`) |
+| deal / opportunity | company | "Company" on deal → company (`many_to_one`) |
+| task | people | "Assigned Contact" on task → people (`many_to_one`) |
+| task | project / deal | "Related To" on task → parent (`many_to_one`) |
+| case | people or company | "Client" on case → people/company (`many_to_one`) |
+| invoice / payment | company | "Company" on invoice → company (`many_to_one`) |
+| invoice / payment | deal | "Deal" on invoice → deal (`many_to_one`) |
+| property / listing | people | "Agent" on property → people (`many_to_one`) |
+| any child concept | its parent concept | relation to parent (`many_to_one`) |
+
+**Use this SQL pattern** (safe — does nothing if the target object doesn't exist):
+
+```sql
+INSERT INTO fields (object_id, name, type, related_object_id, relationship_type, sort_order)
+SELECT
+  (SELECT id FROM objects WHERE name = 'people'),
+  'Company',
+  'relation',
+  (SELECT id FROM objects WHERE name = 'company'),
+  'many_to_one',
+  3
+WHERE EXISTS (SELECT 1 FROM objects WHERE name = 'company')
+ON CONFLICT (object_id, name) DO NOTHING;
+```
+
+**General rule**: If you're creating object B and object A already exists, ask: "Would an entry in B logically belong to or reference an entry in A?" If yes, add a `many_to_one` relation. Use `many_to_many` only when an entry can link to multiple entries (e.g. project → team members).
+
+Relation fields **must be created via SQL** — the API does not support the `relation` type.
+
+---
+
 ## Critical Reminders
 
 - Handle the ENTIRE CRM operation from analysis to SQL execution to filesystem projection to summary
@@ -111,7 +156,7 @@ Never rename partially. If you can't complete all steps, don't start the rename 
 - **ENTRY DOCUMENTS**: New entry detail pages should use human-readable filenames (for example `yt-mikemurphy-001.md`, `jane-smith-001.md`, `acme-corp-001.md`) and MUST be registered in DuckDB `documents` with `file_path`, `parent_object_id`, and `entry_id`. Do NOT default to raw `{entry_id}.md` filenames for new docs. See **documents** child skill.
 - **USER FIELDS**: Resolve member name to ID from `workspace_context.yaml` BEFORE inserting
 - **ENUM FIELDS**: Use type "enum" with `enum_values` JSON array
-- **RELATION FIELDS (PROACTIVE)**: Use type "relation" with `related_object_id` and `relationship_type`. **ALWAYS create relation fields when objects are obviously linked** — don't wait for the user to ask. Examples: people→company, deal→contact, deal→company, task→project, case→client, invoice→company. If you're creating object B and object A exists, ask: "Would B entries reference A entries?" If yes, add a relation. Relation fields must be created via SQL (not the API). See **object-builder** child skill for the full relation pattern and common relation pairs.
+- **RELATION FIELDS (PROACTIVE — SEE SECTION ABOVE)**: ALWAYS create relation fields when objects are obviously linked — don't wait for the user to ask. See the **"Relation Fields — Link Objects Automatically"** section above for the full table of mandatory auto-linking rules and the SQL pattern.
 - **TAGS FIELDS**: Use type "tags" for free-form string arrays. Value stored as `'["tag1","tag2"]'`
 - **URL FIELDS**: Use type "url" for website addresses and links
 - **FILE FIELDS**: Use type "file" for file attachments (stores file path or URL)
