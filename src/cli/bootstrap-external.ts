@@ -1871,9 +1871,8 @@ function resolveDenchCloudApiKeyCandidate(params: {
 
 async function promptForDenchCloudApiKey(initialValue?: string): Promise<string | undefined> {
   const value = await text({
-    message: stylePromptMessage(
-      "Enter your Dench Cloud API key (sign up at dench.com and get it at dench.com/settings)",
-    ),
+    message: stylePromptMessage("Paste your Dench Cloud API key"),
+    placeholder: "dench_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     ...(initialValue ? { initialValue } : {}),
     validate: (input) => (input?.trim().length ? undefined : "API key is required."),
   });
@@ -2033,12 +2032,16 @@ async function resolveDenchCloudBootstrapSelection(params: {
     ? true
     : await confirm({
       message: stylePromptMessage(
-        "Use Dench API Key for inference? Sign up on dench.com and get your API key at dench.com/settings.",
+        "Use Dench Cloud for inference? Get your API key at dench.com/api",
       ),
       initialValue: existingDenchConfigured || !currentProvider,
     });
   if (isCancel(wantsDenchCloud) || !wantsDenchCloud) {
     return { enabled: false };
+  }
+
+  if (!params.nonInteractive) {
+    await openUrl("https://dench.com/api").catch(() => {});
   }
 
   let apiKey = resolveDenchCloudApiKeyCandidate({
