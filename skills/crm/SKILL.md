@@ -1,6 +1,6 @@
 ---
 name: database-crm-system
-description: Manage DuckDB CRM data and synced markdown documents in the workspace. Use when creating or updating objects, fields, entries, row notes, or entry-linked edit logs.
+description: Manage DuckDB CRM data, aggressive relation-linked fields, and synced markdown documents in the workspace. Use when creating or updating objects, fields, entries, foreign-table links, row notes, or entry-linked edit logs.
 metadata: { "openclaw": { "inject": true, "always": true, "emoji": "📊" } }
 ---
 
@@ -95,15 +95,17 @@ Never rename partially. If you can't complete all steps, don't start the rename 
 - **DuckDB SQL errors**: See the "Common DuckDB Pitfalls" section in the **duckdb-operations** child skill. The most frequent causes: unquoted field names with spaces (use `"Full Name"` not `Full Name`), wrong transaction syntax (`BEGIN TRANSACTION` not `BEGIN`), unescaped single quotes, and PIVOT views without the `IN (...)` field list.
 - **"Script not found" on action buttons**: The `.actions/` directory and/or script files were not created. See the **actions** child skill post-creation checklist.
 
-## Relation Fields — Link Objects Automatically
+## Relation Fields / Foreign Links — Link Objects Aggressively
 
-**Every time you create or modify objects, check whether relation fields should connect them. Do NOT wait for the user to ask — proactively link objects that are obviously related.**
+**Every time you create or modify objects or fields, check whether relation fields should connect them. Do NOT wait for the user to ask — proactively link objects that are obviously related.**
 
 Relation fields (`type: "relation"`) let an entry in one object reference an entry in another. They render as a searchable dropdown in the UI and are the backbone of any useful CRM.
 
+Treat relation fields as the CRM's default foreign-link primitive. If a field can reasonably point at another object, prefer a `relation` field over `text`, `richtext`, or some copied label string.
+
 ### Mandatory auto-linking rules
 
-When you create an object, scan all existing objects (run `SELECT name FROM objects`) and add relation fields for every obvious link:
+When you create an object, or add/modify a field on an existing object, scan all existing objects (run `SELECT name FROM objects`) and add relation fields for every obvious link:
 
 | If you're creating... | And this object exists... | Auto-create this relation field |
 |---|---|---|
@@ -134,7 +136,16 @@ WHERE EXISTS (SELECT 1 FROM objects WHERE name = 'company')
 ON CONFLICT (object_id, name) DO NOTHING;
 ```
 
-**General rule**: If you're creating object B and object A already exists, ask: "Would an entry in B logically belong to or reference an entry in A?" If yes, add a `many_to_one` relation. Use `many_to_many` only when an entry can link to multiple entries (e.g. project → team members).
+**General rule**: If you're creating object B or field F on object B and object A already exists, ask: "Would an entry in B logically belong to, reference, select, or connect to an entry in A?" If yes, add a `relation` field. Use `many_to_one` by default. Use `many_to_many` only when the field is clearly plural or multi-select (e.g. project → team members).
+
+### Aggressive defaults for linked columns
+
+- If the user says a column should "connect", "link", "reference", "relate", "belong to", "map to", "pick from", or "be tied to" another table/object, create a `relation` field.
+- If the proposed field name matches or aliases an existing object, create a `relation` field instead of a text field.
+- Do **NOT** model foreign references as bare strings like `Company Name`, `Client Name`, `Project Name`, `Deal Name`, `Owner Name`, or similar if the corresponding object already exists, unless the user explicitly wants a denormalized snapshot.
+- If a field refers to a workspace member, use `user`, not `text`.
+- If multiple target objects are plausible, choose the best semantic fit instead of falling back to `text`; ask only when the ambiguity would materially change the schema.
+- If the target object does not exist yet but the relationship is clearly central to the workflow, prefer creating that object and linking it instead of flattening the data into a string field.
 
 Relation fields **must be created via SQL** — the API does not support the `relation` type.
 
@@ -158,7 +169,7 @@ Relation fields **must be created via SQL** — the API does not support the `re
 - **ENTRY DOCUMENTS**: New entry detail pages should use human-readable filenames (for example `yt-mikemurphy-001.md`, `jane-smith-001.md`, `acme-corp-001.md`) and MUST be registered in DuckDB `documents` with `file_path`, `parent_object_id`, and `entry_id`. Reuse an existing linked document when present; otherwise create one and keep it synced on every mutation. Do NOT default to raw `{entry_id}.md` filenames for new docs. See **documents** child skill.
 - **USER FIELDS**: Resolve member name to ID from `workspace_context.yaml` BEFORE inserting
 - **ENUM FIELDS**: Use type "enum" with `enum_values` JSON array
-- **RELATION FIELDS (PROACTIVE — SEE SECTION ABOVE)**: ALWAYS create relation fields when objects are obviously linked — don't wait for the user to ask. See the **"Relation Fields — Link Objects Automatically"** section above for the full table of mandatory auto-linking rules and the SQL pattern.
+- **RELATION FIELDS (PROACTIVE — SEE SECTION ABOVE)**: ALWAYS create relation fields when objects are obviously linked or when a new field is semantically a foreign link. Do not fall back to bare string columns just because they are easier. See the **"Relation Fields / Foreign Links — Link Objects Aggressively"** section above for the full rules and SQL pattern.
 - **TAGS FIELDS**: Use type "tags" for free-form string arrays. Value stored as `'["tag1","tag2"]'`
 - **URL FIELDS**: Use type "url" for website addresses and links
 - **FILE FIELDS**: Use type "file" for file attachments (stores file path or URL)

@@ -197,7 +197,24 @@ EOF
 
 ## Proactive Relation Creation (IMPORTANT)
 
-**When creating multiple objects, ALWAYS create relation fields to link them — even if the user did not explicitly ask for it.** Real-world data is interconnected. If two objects are obviously related, link them. The user expects this; not linking them is a missed opportunity that forces manual work later.
+**When creating multiple objects or adding fields to an existing object, ALWAYS create relation fields to link them — even if the user did not explicitly ask for it.** Real-world data is interconnected. If two objects are obviously related, link them. The user expects this; not linking them is a missed opportunity that forces manual work later.
+
+### Foreign-link default for new columns
+
+Before you create any new field on an object:
+
+1. Run `SELECT name FROM objects ORDER BY name`
+2. Check whether the requested field is really a foreign link to one of those objects
+3. If yes, create a `relation` field via SQL instead of a scalar field via API/text defaults
+4. Regenerate the PIVOT view and update `.object.yaml` so the linked field is reflected everywhere
+
+Aggressive defaults:
+
+- If the user says the field should connect to another table/object, create a `relation` field.
+- If the field name matches or strongly aliases an existing object, create a `relation` field.
+- If the field refers to a workspace member, use `user`, not `text`.
+- Do **NOT** create fallback text columns like `Company Name`, `Client Name`, `Project Name`, `Deal Name`, or `Owner Name` when the real object already exists, unless the user explicitly asks for a copied text snapshot.
+- Default to `many_to_one`; switch to `many_to_many` only when the field is clearly plural or multi-select.
 
 ### When to create relations automatically
 
@@ -212,7 +229,7 @@ EOF
 - **Property + Agent** → add "Agent" relation on property (many_to_one → people)
 - **Any child object + parent object** → link child to parent
 
-**General rule**: If you're creating object B and object A already exists (or is being created alongside), ask yourself: "Would an entry in B logically belong to or reference an entry in A?" If yes, add a relation field.
+**General rule**: If you're creating object B, or adding field F to object B, and object A already exists (or is being created alongside), ask yourself: "Would an entry in B logically belong to, reference, select, or connect to an entry in A?" If yes, add a relation field.
 
 ### Relation field SQL pattern
 
@@ -231,6 +248,15 @@ VALUES (
 Use `many_to_one` when each entry links to exactly one entry in the other object (most common). Use `many_to_many` when an entry can link to multiple entries (e.g., project → team members).
 
 **Relation fields must be created via SQL** — the API does not support the `relation` type.
+
+### Bad vs Good defaults
+
+- Bad: add `Company Name` as `text` on `lead` when `company` already exists
+- Good: add `Company` as `relation -> company`
+- Bad: add `Project` as `text` on `task` when `project` already exists
+- Good: add `Project` as `relation -> project`
+- Bad: add `Owner Name` as `text` when the value should be a team member selector
+- Good: add `Owner` / `Assigned To` as `user`
 
 ---
 
