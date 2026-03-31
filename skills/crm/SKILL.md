@@ -1,6 +1,6 @@
 ---
 name: database-crm-system
-description: Manage Database and everything else in the workspace - objects, fields, entries via DuckDB and documents as markdown files in a nested knowledge tree. Acts as your second brain.
+description: Manage DuckDB CRM data and synced markdown documents in the workspace. Use when creating or updating objects, fields, entries, row notes, or entry-linked edit logs.
 metadata: { "openclaw": { "inject": true, "always": true, "emoji": "📊" } }
 ---
 
@@ -143,6 +143,8 @@ Relation fields **must be created via SQL** — the API does not support the `re
 ## Critical Reminders
 
 - Handle the ENTIRE CRM operation from analysis to SQL execution to filesystem projection to summary
+- **ENTRY DOCUMENTS ARE DEFAULT, NOT OPTIONAL**: Whenever possible, every CRM entry should have a connected markdown document. Create it when the entry is created or on the first mutation that touches the entry if the document does not already exist.
+- **LOG EVERY ENTRY MUTATION**: Whenever entry data changes, update the connected document and append a concise timestamped change-log entry describing what changed.
 - **NEVER SKIP FILESYSTEM PROJECTION**: After creating/modifying any object, you MUST create/update `{object}/.object.yaml` in workspace AND the `v_{object}` view. If you skip this, the object will be invisible in the sidebar. This is NOT optional.
 - **THREE STEPS, EVERY TIME**: (1) SQL transaction, (2) filesystem projection (.object.yaml + directory), (3) verify. An operation is NOT complete until all three are done. See **object-builder** child skill.
 - Always check existing data before creating (`SELECT` before `INSERT`, or `ON CONFLICT`)
@@ -152,8 +154,8 @@ Relation fields **must be created via SQL** — the API does not support the `re
 - Extract ALL data from user messages — don't leave information unused
 - **REPORTS vs DOCUMENTS**: When the user asks for "reports", "analytics", "charts", "graphs", "metrics", "insights", or "breakdown" — use `.report.json` format (see **reports** child skill), NOT markdown. Only use markdown `.md` for SOPs, guides, notes, and prose documents.
 - **INLINE CHART ARTIFACTS**: When answering analytics questions in chat, ALWAYS emit a `report-json` fenced code block so the UI renders interactive charts inline.
-- **NOTES FIELD vs ENTRY DOCUMENTS**: These are different. `Notes` is a DuckDB `richtext` field stored in `entry_fields`. Entry documents are markdown files linked through the `documents` table. When the user asks for long-form notes, draft emails, writeups, or entry pages, default to entry documents unless they explicitly say "update the Notes field/column".
-- **ENTRY DOCUMENTS**: New entry detail pages should use human-readable filenames (for example `yt-mikemurphy-001.md`, `jane-smith-001.md`, `acme-corp-001.md`) and MUST be registered in DuckDB `documents` with `file_path`, `parent_object_id`, and `entry_id`. Do NOT default to raw `{entry_id}.md` filenames for new docs. See **documents** child skill.
+- **NOTES FIELD vs ENTRY DOCUMENTS**: These are different. `Notes` is a DuckDB `richtext` field stored in `entry_fields`. Entry documents are markdown files linked through the `documents` table. References to "notes" on a row or entry default to the connected entry document unless the user explicitly says `Notes` field/column or needs table/filter/SQL semantics.
+- **ENTRY DOCUMENTS**: New entry detail pages should use human-readable filenames (for example `yt-mikemurphy-001.md`, `jane-smith-001.md`, `acme-corp-001.md`) and MUST be registered in DuckDB `documents` with `file_path`, `parent_object_id`, and `entry_id`. Reuse an existing linked document when present; otherwise create one and keep it synced on every mutation. Do NOT default to raw `{entry_id}.md` filenames for new docs. See **documents** child skill.
 - **USER FIELDS**: Resolve member name to ID from `workspace_context.yaml` BEFORE inserting
 - **ENUM FIELDS**: Use type "enum" with `enum_values` JSON array
 - **RELATION FIELDS (PROACTIVE — SEE SECTION ABOVE)**: ALWAYS create relation fields when objects are obviously linked — don't wait for the user to ask. See the **"Relation Fields — Link Objects Automatically"** section above for the full table of mandatory auto-linking rules and the SQL pattern.
@@ -191,7 +193,7 @@ This skill covers workspace fundamentals. For specialized operations, see these 
 | **DuckDB Operations** | `crm/duckdb-operations/SKILL.md` | DuckDB schema initialization, field types reference, auto-generated PIVOT views, SQL CRUD operations (create/read/update/delete objects, fields, entries), bulk import/export |
 | **Object Builder** | `crm/object-builder/SKILL.md` | Full 3-step workflow (SQL → filesystem → verify), CRM patterns (contact, lead, company, deal, case, property, task), kanban boards, post-mutation checklist, renaming objects |
 | **Views & Filters** | `crm/views-filters/SKILL.md` | `.object.yaml` format and template, view type settings (kanban, calendar, timeline, gallery, list), saved views, filter operators by field type, date format rules |
-| **Documents** | `crm/documents/SKILL.md` | Document management (markdown files), cross-nesting (documents under objects, objects under documents), entry detail pages (optional per-entry markdown) |
+| **Documents** | `crm/documents/SKILL.md` | Document management (markdown files), cross-nesting (documents under objects, objects under documents), default connected entry pages, and entry mutation/edit logs |
 | **Reports** | `crm/reports/SKILL.md` | Report generation (`.report.json` format), chart types (bar, line, area, pie, donut, radar, scatter, funnel), panel sizes, filter types, inline chat reports, post-report checklist |
 | **Actions** | `crm/actions/SKILL.md` | Action field type (`type: "action"`), executable buttons on entries, server-side script execution in any language (JS, Python, bash, etc.), inline JS SDK, NDJSON stdout protocol, environment variable context, bulk parallel execution, action_runs table, UI rendering in table/kanban/entry panel |
 

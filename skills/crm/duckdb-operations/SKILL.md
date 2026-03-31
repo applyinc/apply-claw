@@ -367,6 +367,8 @@ COMMIT;
 "
 ```
 
+Entry creation is not complete until the connected entry document exists on disk and is registered in `documents`. After the SQL commit, follow the default sync workflow in `crm/documents/SKILL.md`.
+
 ### Search Entries (via view)
 
 ```sql
@@ -390,6 +392,8 @@ INSERT INTO entry_fields (entry_id, field_id, value)
 VALUES ('<entry_id>', (SELECT id FROM fields WHERE object_id = '<obj_id>' AND name = 'Status'), 'Qualified')
 ON CONFLICT (entry_id, field_id) DO UPDATE SET value = excluded.value, updated_at = now();
 ```
+
+After updating `entry_fields`, immediately sync the connected entry document and append a timestamped activity log entry describing the change. This still applies when the user explicitly asks for the `Notes` field/column.
 
 ### Delete (with cascade)
 
