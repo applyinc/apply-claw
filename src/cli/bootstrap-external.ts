@@ -40,6 +40,7 @@ import {
   ensureManagedWebRuntime,
   resolveCliPackageRoot,
   resolveProfileStateDir,
+  waitForWebRuntime,
 } from "./web-runtime.js";
 import { seedWorkspaceFromAssets, type WorkspaceSeedResult } from "./workspace-seed.js";
 
@@ -53,6 +54,15 @@ const OPENCLAW_CLI_CHECK_CACHE_TTL_MS = 5 * 60_000;
 const OPENCLAW_UPDATE_PROMPT_SUPPRESS_AFTER_INSTALL_MS = 5 * 60_000;
 const OPENCLAW_CLI_CHECK_CACHE_FILE = "openclaw-cli-check.json";
 const OPENCLAW_SETUP_PROGRESS_BAR_WIDTH = 16;
+const BOOTSTRAP_DEVICE_PAIRING_COMMAND_TIMEOUT_MS = 10_000;
+const BOOTSTRAP_DEVICE_PAIRING_POLL_DELAY_MS = 500;
+const READY_WEB_DEVICE_PAIRING_POLL_ATTEMPTS = 1;
+const UNREADY_WEB_DEVICE_PAIRING_POLL_ATTEMPTS = 4;
+const BOOTSTRAP_DEVICE_PAIRING_REQUIRED_SCOPES = [
+  "operator.read",
+  "operator.write",
+  "operator.pairing",
+] as const;
 
 type BootstrapRolloutStage = "internal" | "beta" | "default";
 type BootstrapCheckStatus = "pass" | "warn" | "fail";
@@ -176,6 +186,24 @@ type GatewayAutoFixResult = {
   finalProbe: { ok: boolean; detail?: string };
   failureSummary?: string;
   logExcerpts: GatewayLogExcerpt[];
+};
+
+type DeviceListEntry = {
+  requestId?: string;
+  deviceId?: string;
+  clientId?: string;
+  clientMode?: string;
+  platform?: string;
+  role?: string;
+  roles: string[];
+  scopes: string[];
+  createdAtMs?: number;
+};
+
+type BootstrapDevicePairingResult = {
+  status: "none" | "approved" | "ambiguous" | "failed";
+  detail: string;
+  requestId?: string;
 };
 
 type BundledPluginSpec = {
@@ -439,10 +467,20 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
+function toStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function toFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function normalizeFilesystemPath(value: string): string {
@@ -941,6 +979,221 @@ function parseJsonPayload(raw: string | undefined): Record<string, unknown> | un
       return undefined;
     }
   }
+}
+
+function normalizeDeviceListEntry(value: unknown): DeviceListEntry | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  return {
+    requestId:
+      typeof record.requestId === "string"
+        ? record.requestId
+        : typeof record.id === "string"
+          ? record.id
+          : undefined,
+    deviceId: typeof record.deviceId === "string" ? record.deviceId : undefined,
+    clientId: typeof record.clientId === "string" ? record.clientId : undefined,
+    clientMode: typeof record.clientMode === "string" ? record.clientMode : undefined,
+    platform: typeof record.platform === "string" ? record.platform : undefined,
+    role: typeof record.role === "string" ? record.role : undefined,
+    roles: uniqueStrings(toStringArray(record.roles)),
+    scopes: uniqueStrings(toStringArray(record.scopes)),
+    createdAtMs:
+      toFiniteNumber(record.createdAtMs) ??
+      toFiniteNumber(record.requestedAtMs) ??
+      toFiniteNumber(record.updatedAtMs),
+  };
+}
+
+function parsePendingDeviceRequests(raw: string | undefined): DeviceListEntry[] | undefined {
+  const payload = parseJsonPayload(raw);
+  if (!payload) {
+    return undefined;
+  }
+  if (!Array.isArray(payload.pending)) {
+    return [];
+  }
+  return payload.pending
+    .map((value) => normalizeDeviceListEntry(value))
+    .filter((value): value is DeviceListEntry => Boolean(value));
+}
+
+function resolveDeviceListEntryRoles(entry: DeviceListEntry): string[] {
+  return uniqueStrings([...entry.roles, entry.role ?? ""]);
+}
+
+function hasBootstrapDevicePairingScopes(entry: DeviceListEntry): boolean {
+  const scopes = new Set(entry.scopes);
+  return BOOTSTRAP_DEVICE_PAIRING_REQUIRED_SCOPES.every((scope) => scopes.has(scope));
+}
+
+function scoreBootstrapDevicePairingRequest(entry: DeviceListEntry): number {
+  let score = 0;
+  if (resolveDeviceListEntryRoles(entry).includes("operator")) {
+    score += 4;
+  }
+  if (entry.platform === process.platform) {
+    score += 4;
+  }
+  if (entry.clientId === "cli") {
+    score += 3;
+  }
+  if (entry.clientMode === "cli") {
+    score += 2;
+  }
+  if (hasBootstrapDevicePairingScopes(entry)) {
+    score += 3;
+  }
+  if (entry.scopes.includes("operator.approvals")) {
+    score += 1;
+  }
+  if (entry.scopes.includes("operator.admin")) {
+    score += 1;
+  }
+  return score;
+}
+
+function selectBootstrapDevicePairingRequest(pending: DeviceListEntry[]): {
+  status: "none" | "selected" | "ambiguous" | "failed";
+  detail: string;
+  request?: DeviceListEntry;
+} {
+  const candidates = pending
+    .filter((entry) => {
+      const roles = resolveDeviceListEntryRoles(entry);
+      const platformMatches = !entry.platform || entry.platform === process.platform;
+      return platformMatches && roles.includes("operator") && hasBootstrapDevicePairingScopes(entry);
+    })
+    .map((entry) => ({ entry, score: scoreBootstrapDevicePairingRequest(entry) }))
+    .sort(
+      (a, b) => b.score - a.score || (b.entry.createdAtMs ?? 0) - (a.entry.createdAtMs ?? 0),
+    );
+  if (candidates.length === 0) {
+    return { status: "none", detail: "no pending local operator pairing request found" };
+  }
+  const top = candidates[0];
+  if (!top?.entry.requestId) {
+    return { status: "failed", detail: "pending device request is missing requestId" };
+  }
+  const second = candidates[1];
+  if (second && second.score === top.score) {
+    return {
+      status: "ambiguous",
+      detail: `found ${candidates.length} equally likely pending operator pairing requests`,
+    };
+  }
+  return {
+    status: "selected",
+    detail: `selected ${top.entry.requestId}`,
+    request: top.entry,
+  };
+}
+
+async function attemptBootstrapDevicePairing(params: {
+  openclawCommand: string;
+  profile: string;
+  pollAttempts: number;
+  pollDelayMs?: number;
+}): Promise<BootstrapDevicePairingResult> {
+  const pollDelayMs = params.pollDelayMs ?? BOOTSTRAP_DEVICE_PAIRING_POLL_DELAY_MS;
+  let lastDetail = "no pending local operator pairing request found";
+
+  for (let attempt = 0; attempt < params.pollAttempts; attempt += 1) {
+    const listResult = await runOpenClaw(
+      params.openclawCommand,
+      ["--profile", params.profile, "devices", "list", "--json"],
+      BOOTSTRAP_DEVICE_PAIRING_COMMAND_TIMEOUT_MS,
+    ).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        code: 1,
+        stdout: "",
+        stderr: message,
+      } as SpawnResult;
+    });
+    if (listResult.code !== 0) {
+      return {
+        status: "failed",
+        detail:
+          firstNonEmptyLine(listResult.stderr, listResult.stdout) ??
+          "Failed to list device pairing requests.",
+      };
+    }
+
+    const pending = parsePendingDeviceRequests(
+      [listResult.stdout, listResult.stderr].filter(Boolean).join("\n"),
+    );
+    if (!pending) {
+      return {
+        status: "failed",
+        detail: "Failed to parse pending device pairing requests.",
+      };
+    }
+
+    const selection = selectBootstrapDevicePairingRequest(pending);
+    lastDetail = selection.detail;
+    if (selection.status === "none") {
+      if (attempt < params.pollAttempts - 1) {
+        await sleep(pollDelayMs);
+        continue;
+      }
+      return { status: "none", detail: selection.detail };
+    }
+    if (selection.status === "ambiguous" || selection.status === "failed") {
+      return { status: selection.status, detail: selection.detail };
+    }
+
+    const request = selection.request;
+    const requestId = request?.requestId;
+    if (!requestId) {
+      return {
+        status: "failed",
+        detail: "selected device pairing request is missing requestId",
+      };
+    }
+
+    const approveResult = await runOpenClaw(
+      params.openclawCommand,
+      ["--profile", params.profile, "devices", "approve", requestId],
+      BOOTSTRAP_DEVICE_PAIRING_COMMAND_TIMEOUT_MS,
+    ).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        code: 1,
+        stdout: "",
+        stderr: message,
+      } as SpawnResult;
+    });
+    if (approveResult.code === 0) {
+      const label = request.deviceId ? `${request.deviceId} (${requestId})` : requestId;
+      return {
+        status: "approved",
+        requestId,
+        detail: `Approved ${label}.`,
+      };
+    }
+
+    const approveDetail =
+      firstNonEmptyLine(approveResult.stderr, approveResult.stdout) ??
+      `Failed to approve ${requestId}.`;
+    if (
+      attempt < params.pollAttempts - 1 &&
+      /(superseded|stale|not found|no pending|expired)/iu.test(approveDetail)
+    ) {
+      lastDetail = approveDetail;
+      await sleep(pollDelayMs);
+      continue;
+    }
+    return {
+      status: "failed",
+      requestId,
+      detail: approveDetail,
+    };
+  }
+
+  return { status: "none", detail: lastDetail };
 }
 
 function resolveOpenClawCliCheckCachePath(stateDir: string): string {
@@ -2517,13 +2770,33 @@ export async function bootstrapCommand(
   const gatewayUrl = `ws://127.0.0.1:${gatewayPort}`;
   const preferredWebPort = parseOptionalPort(opts.webPort) ?? DEFAULT_WEB_APP_PORT;
   postOnboardSpinner?.message(`Starting web runtime on port ${preferredWebPort}…`);
-  const webRuntimeStatus = await ensureManagedWebRuntime({
+  let webRuntimeStatus = await ensureManagedWebRuntime({
     stateDir,
     packageRoot,
     denchVersion: VERSION,
     port: preferredWebPort,
     gatewayPort,
   });
+
+  // Bootstrap should finish with the local CLI device paired so the Control UI
+  // and follow-up commands do not rely on loopback fallback or manual approval.
+  postOnboardSpinner?.message("Checking local device pairing…");
+  const devicePairing = await attemptBootstrapDevicePairing({
+    openclawCommand,
+    profile,
+    pollAttempts: webRuntimeStatus.ready
+      ? READY_WEB_DEVICE_PAIRING_POLL_ATTEMPTS
+      : UNREADY_WEB_DEVICE_PAIRING_POLL_ATTEMPTS,
+  });
+  if (!webRuntimeStatus.ready && devicePairing.status === "approved") {
+    postOnboardSpinner?.message("Waiting for web runtime after pairing…");
+    const webRuntimeRetry = await waitForWebRuntime(preferredWebPort);
+    webRuntimeStatus = {
+      ready: webRuntimeRetry.ok,
+      reason: webRuntimeRetry.reason,
+    };
+  }
+
   postOnboardSpinner?.stop(
     webRuntimeStatus.ready
       ? "Post-onboard setup complete."
@@ -2567,6 +2840,23 @@ export async function bootstrapCommand(
   if (!opts.json) {
     if (!webRuntimeStatus.ready) {
       runtime.log(theme.warn(`Managed web runtime check failed: ${webRuntimeStatus.reason}`));
+    }
+    if (devicePairing.status === "approved") {
+      runtime.log(theme.muted("Approved the pending local OpenClaw device pairing request."));
+    } else if (devicePairing.status === "ambiguous") {
+      runtime.log(theme.warn(`Automatic device pairing skipped: ${devicePairing.detail}.`));
+      runtime.log(
+        theme.muted(
+          `Run \`openclaw --profile ${profile} devices list\` and approve the correct request manually.`,
+        ),
+      );
+    } else if (devicePairing.status === "failed") {
+      runtime.log(theme.warn(`Automatic device pairing failed: ${devicePairing.detail}`));
+      runtime.log(
+        theme.muted(
+          `If the Control UI still reports "pairing required", run \`openclaw --profile ${profile} devices list\` and approve the pending request.`,
+        ),
+      );
     }
     if (installResult.installed) {
       runtime.log(theme.muted("Installed global OpenClaw CLI via npm."));

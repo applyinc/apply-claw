@@ -156,6 +156,33 @@ function applyConfigSet(stateDir: string, keyPath: string, rawValue: string): vo
   writeFileSync(configPath, JSON.stringify(current));
 }
 
+function createPendingDeviceRequest(params: {
+  requestId: string;
+  deviceId: string;
+  createdAtMs?: number;
+  platform?: string;
+  clientId?: string;
+  clientMode?: string;
+}): Record<string, unknown> {
+  return {
+    requestId: params.requestId,
+    deviceId: params.deviceId,
+    platform: params.platform ?? process.platform,
+    clientId: params.clientId ?? "cli",
+    clientMode: params.clientMode ?? "cli",
+    role: "operator",
+    roles: ["operator"],
+    scopes: [
+      "operator.admin",
+      "operator.approvals",
+      "operator.pairing",
+      "operator.read",
+      "operator.write",
+    ],
+    createdAtMs: params.createdAtMs ?? Date.now(),
+  };
+}
+
 function createMockChild(params: {
   code: number;
   stdout?: string;
@@ -219,6 +246,9 @@ describe("bootstrapCommand always-onboard behavior", () => {
   let alwaysHealthFail = false;
   let gatewayModeConfigValue = "local\n";
   let driftGatewayModeAfterOnboard = false;
+  let pendingDeviceRequests: Array<Record<string, unknown>> = [];
+  let pairedDevices: Array<Record<string, unknown>> = [];
+  let approvedDeviceRequestIds: string[] = [];
 
   beforeEach(() => {
     homeDir = createTempStateDir();
@@ -232,6 +262,9 @@ describe("bootstrapCommand always-onboard behavior", () => {
     alwaysHealthFail = false;
     gatewayModeConfigValue = "local\n";
     driftGatewayModeAfterOnboard = false;
+    pendingDeviceRequests = [];
+    pairedDevices = [];
+    approvedDeviceRequestIds = [];
     process.env = {
       ...originalEnv,
       HOME: homeDir,
@@ -320,6 +353,35 @@ describe("bootstrapCommand always-onboard behavior", () => {
           gatewayModeConfigValue = "remote\n";
         }
         return createMockChild({ code: 0, stdout: "ok\n" }) as never;
+      }
+      if (commandString === "openclaw" && argList.includes("devices") && argList.includes("list")) {
+        return createMockChild({
+          code: 0,
+          stdout: `${JSON.stringify({ pending: pendingDeviceRequests, paired: pairedDevices })}\n`,
+        }) as never;
+      }
+      if (commandString === "openclaw" && argList.includes("devices") && argList.includes("approve")) {
+        const requestId = argList.at(-1) ?? "";
+        const match = pendingDeviceRequests.find((entry) => entry.requestId === requestId);
+        if (!match) {
+          return createMockChild({
+            code: 1,
+            stderr: `request not found: ${requestId}\n`,
+          }) as never;
+        }
+        pendingDeviceRequests = pendingDeviceRequests.filter((entry) => entry.requestId !== requestId);
+        pairedDevices = [
+          ...pairedDevices,
+          {
+            ...match,
+            approvedAtMs: typeof match.createdAtMs === "number" ? match.createdAtMs : Date.now(),
+          },
+        ];
+        approvedDeviceRequestIds.push(requestId);
+        return createMockChild({
+          code: 0,
+          stdout: `Approved ${String(match.deviceId ?? "device")} (${requestId})\n`,
+        }) as never;
       }
       if (
         commandString === "openclaw" &&
@@ -1440,6 +1502,112 @@ describe("bootstrapCommand always-onboard behavior", () => {
     expect(onboardCalls[0]?.args).not.toContain("--non-interactive");
     expect(onboardCalls[0]?.args).toContain("--accept-risk");
     expect(onboardCalls[0]?.args).toContain("--skip-ui");
+  });
+
+  it("approves the pending local device request during bootstrap", async () => {
+    pendingDeviceRequests = [
+      createPendingDeviceRequest({
+        requestId: "req-local-1",
+        deviceId: "device-local-1",
+      }),
+    ];
+    const runtime: RuntimeEnv = {
+      log: vi.fn(),
+      error: vi.fn(),
+      exit: vi.fn(),
+    };
+
+    await bootstrapCommand(
+      {
+        nonInteractive: true,
+        noOpen: true,
+        skipUpdate: true,
+      },
+      runtime,
+    );
+
+    expect(approvedDeviceRequestIds).toEqual(["req-local-1"]);
+    const approveCall = spawnCalls.find(
+      (call) =>
+        call.command === "openclaw" &&
+        call.args.includes("devices") &&
+        call.args.includes("approve") &&
+        call.args.includes("req-local-1"),
+    );
+    expect(approveCall).toBeDefined();
+  });
+
+  it("rechecks the web runtime after approving a pending device request", async () => {
+    pendingDeviceRequests = [
+      createPendingDeviceRequest({
+        requestId: "req-local-2",
+        deviceId: "device-local-2",
+      }),
+    ];
+    fetchBehavior = async (url: string) => {
+      if (url.includes("/api/profiles")) {
+        return approvedDeviceRequestIds.length > 0
+          ? createWebProfilesResponse()
+          : createWebProfilesResponse({ status: 503, payload: {} });
+      }
+      return createWebProfilesResponse({ status: 404, payload: {} });
+    };
+    const runtime: RuntimeEnv = {
+      log: vi.fn(),
+      error: vi.fn(),
+      exit: vi.fn(),
+    };
+
+    const summary = await bootstrapCommand(
+      {
+        nonInteractive: true,
+        noOpen: true,
+        skipUpdate: true,
+      },
+      runtime,
+    );
+
+    expect(approvedDeviceRequestIds).toEqual(["req-local-2"]);
+    expect(summary.webReachable).toBe(true);
+    const profileProbeCalls = fetchMock.mock.calls.filter((call) =>
+      String(call[0] ?? "").includes("/api/profiles"),
+    );
+    expect(profileProbeCalls.length).toBeGreaterThan(1);
+  });
+
+  it("skips auto-approval when multiple equally likely device requests are pending", async () => {
+    pendingDeviceRequests = [
+      createPendingDeviceRequest({
+        requestId: "req-ambiguous-1",
+        deviceId: "device-ambiguous-1",
+        createdAtMs: 1,
+      }),
+      createPendingDeviceRequest({
+        requestId: "req-ambiguous-2",
+        deviceId: "device-ambiguous-2",
+        createdAtMs: 2,
+      }),
+    ];
+    const logSpy = vi.fn();
+    const runtime: RuntimeEnv = {
+      log: logSpy,
+      error: vi.fn(),
+      exit: vi.fn(),
+    };
+
+    await bootstrapCommand(
+      {
+        nonInteractive: true,
+        noOpen: true,
+        skipUpdate: true,
+      },
+      runtime,
+    );
+
+    expect(approvedDeviceRequestIds).toEqual([]);
+    const logMessages = logSpy.mock.calls.map((call) => String(call[0] ?? "")).join("\n");
+    expect(logMessages).toContain("Automatic device pairing skipped");
+    expect(logMessages).toContain("devices list");
   });
 
   it("does not call gateway install/start fallback when onboarding is always used", async () => {
