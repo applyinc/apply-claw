@@ -81,6 +81,37 @@ npx denchclaw start --skip-daemon-install
 
 ---
 
+## Troubleshooting
+
+### `pairing required`
+
+If the Control UI or CLI shows `gateway connect failed: GatewayClientRequestError: pairing required`, the local device is still waiting for approval.
+
+Recent `denchclaw` bootstrap runs try to approve this automatically. If you are on an older install, or bootstrap skipped approval because there were multiple pending requests, list the pending devices first:
+
+```bash
+openclaw --profile dench devices list
+```
+
+Review the pending `operator` request, then approve it:
+
+```bash
+openclaw --profile dench devices approve --latest
+
+# or approve the exact request you just reviewed
+openclaw --profile dench devices approve <requestId>
+```
+
+If the client retries pairing, OpenClaw can replace the pending request with a new `requestId`, so run `devices list` immediately before approving. See the [OpenClaw devices docs](https://docs.openclaw.ai/cli/devices#openclaw-devices-list) for more details.
+
+After approval, refresh the browser. If the UI is still disconnected, restart the managed web runtime:
+
+```bash
+npx denchclaw restart
+```
+
+---
+
 ## Development
 
 ```bash
