@@ -463,7 +463,7 @@ export function ChatSessionsSidebar({
 	const [hoveredId, setHoveredId] = useState<string | null>(null);
 	const [renamingId, setRenamingId] = useState<string | null>(null);
 	const [renameValue, setRenameValue] = useState("");
-	const [activeFilter, setActiveFilter] = useState("denchclaw");
+	const [activeFilter, setActiveFilter] = useState("applyclaw");
 
 	const handleSelect = useCallback(
 		(id: string) => { onSelectSession(id); onClose?.(); },
@@ -547,7 +547,7 @@ export function ChatSessionsSidebar({
 	// ── Dynamic tab list ──
 	const tabs = useMemo(() => {
 		const result: SidebarTab[] = [
-			{ id: "denchclaw", label: "DenchClaw", count: denchClawSessions.length },
+			{ id: "applyclaw", label: "AppLy Claw", count: denchClawSessions.length },
 		];
 		const channelOrder = ["telegram", "whatsapp", "discord", "slack", "signal", "imessage", "googlechat", "nostr"];
 		for (const channel of channelOrder) {
@@ -600,7 +600,7 @@ export function ChatSessionsSidebar({
 			);
 		}
 
-		if (activeFilter === "denchclaw") {
+		if (activeFilter === "applyclaw") {
 			if (denchClawSessions.length === 0) {
 				return (
 					<div className="px-4 py-8 text-center">

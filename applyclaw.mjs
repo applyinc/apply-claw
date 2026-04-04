@@ -52,5 +52,5 @@ if (await tryImport("./dist/entry.js")) {
 } else if (await tryImport("./dist/entry.mjs")) {
   // OK
 } else {
-  throw new Error("denchclaw: missing dist/entry.(m)js (build output).");
+  throw new Error("applyclaw: missing dist/entry.(m)js (build output).");
 }

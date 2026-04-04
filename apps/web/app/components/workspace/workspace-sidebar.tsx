@@ -78,6 +78,25 @@ type WorkspaceSidebarProps = {
   onTabChange?: (tab: "files" | "chats") => void;
 };
 
+function ActiveModelLabel() {
+	const [model, setModel] = useState<string | null>(null);
+	useEffect(() => {
+		fetch("/api/workspace/active-model")
+			.then((r) => r.json())
+			.then((d) => setModel(d.model ?? null))
+			.catch(() => {});
+	}, []);
+	return (
+		<span
+			className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm truncate"
+			style={{ color: "var(--color-text-muted)" }}
+			title={model ?? undefined}
+		>
+			{model ?? "No model"}
+		</span>
+	);
+}
+
 function HomeIcon() {
 	return (
 		<svg
@@ -568,15 +587,7 @@ export function WorkspaceSidebar({
 				className="px-3 py-2.5 border-t flex items-center justify-between"
 				style={{ borderColor: "var(--color-border)" }}
 			>
-				<a
-					href="https://dench.com"
-					target="_blank"
-					rel="noopener noreferrer"
-					className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm"
-					style={{ color: "var(--color-text-muted)" }}
-				>
-					dench.com{process.env.NEXT_PUBLIC_DENCHCLAW_VERSION ? ` (v${process.env.NEXT_PUBLIC_DENCHCLAW_VERSION})` : ""}
-				</a>
+				<ActiveModelLabel />
 				<div className="flex items-center gap-0.5">
 					{onToggleHidden && (
 						<button

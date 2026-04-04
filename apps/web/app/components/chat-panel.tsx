@@ -2465,7 +2465,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 							{/* Hero greeting */}
 							{greeting && (
 								<h1
-									className="text-3xl md:text-5xl font-light tracking-normal font-instrument mb-6 md:mb-10 text-center px-4"
+									className="text-3xl md:text-5xl font-light tracking-normal mb-6 md:mb-10 text-center px-4"
 									style={{ color: "var(--color-text)" }}
 								>
 									{greeting}

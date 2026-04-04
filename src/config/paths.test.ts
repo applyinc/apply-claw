@@ -3,7 +3,7 @@ import {
   isDaemonlessMode,
   resolveGatewayPort,
   DEFAULT_GATEWAY_PORT,
-  DENCHCLAW_DEFAULT_GATEWAY_PORT,
+  APPLYCLAW_DEFAULT_GATEWAY_PORT,
 } from "./paths.js";
 
 describe("resolveGatewayPort", () => {
@@ -56,15 +56,15 @@ describe("resolveGatewayPort", () => {
         OPENCLAW_PROFILE: "dench",
         OPENCLAW_GATEWAY_PORT: "not-a-number",
       }),
-    ).toBe(DENCHCLAW_DEFAULT_GATEWAY_PORT);
+    ).toBe(APPLYCLAW_DEFAULT_GATEWAY_PORT);
   });
 
   it("ignores zero and negative config ports (invalid config)", () => {
     expect(resolveGatewayPort({ gateway: { port: 0 } }, { OPENCLAW_PROFILE: "dench" })).toBe(
-      DENCHCLAW_DEFAULT_GATEWAY_PORT,
+      APPLYCLAW_DEFAULT_GATEWAY_PORT,
     );
     expect(resolveGatewayPort({ gateway: { port: -1 } }, { OPENCLAW_PROFILE: "dench" })).toBe(
-      DENCHCLAW_DEFAULT_GATEWAY_PORT,
+      APPLYCLAW_DEFAULT_GATEWAY_PORT,
     );
   });
 
@@ -74,14 +74,14 @@ describe("resolveGatewayPort", () => {
         OPENCLAW_PROFILE: "dench",
         OPENCLAW_GATEWAY_PORT: "   ",
       }),
-    ).toBe(DENCHCLAW_DEFAULT_GATEWAY_PORT);
+    ).toBe(APPLYCLAW_DEFAULT_GATEWAY_PORT);
   });
 
   it("undefined config falls through to profile/global default", () => {
     expect(resolveGatewayPort(undefined, {})).toBe(DEFAULT_GATEWAY_PORT);
     expect(resolveGatewayPort({}, {})).toBe(DEFAULT_GATEWAY_PORT);
     expect(resolveGatewayPort({ gateway: {} }, { OPENCLAW_PROFILE: "dench" })).toBe(
-      DENCHCLAW_DEFAULT_GATEWAY_PORT,
+      APPLYCLAW_DEFAULT_GATEWAY_PORT,
     );
   });
 });
@@ -114,8 +114,8 @@ describe("isDaemonlessMode", () => {
 
 describe("port constants", () => {
   it("DenchClaw default port is distinct from OpenClaw default (prevents port collision)", () => {
-    expect(DENCHCLAW_DEFAULT_GATEWAY_PORT).not.toBe(DEFAULT_GATEWAY_PORT);
-    expect(DENCHCLAW_DEFAULT_GATEWAY_PORT).toBe(19001);
+    expect(APPLYCLAW_DEFAULT_GATEWAY_PORT).not.toBe(DEFAULT_GATEWAY_PORT);
+    expect(APPLYCLAW_DEFAULT_GATEWAY_PORT).toBe(19001);
     expect(DEFAULT_GATEWAY_PORT).toBe(18789);
   });
 });

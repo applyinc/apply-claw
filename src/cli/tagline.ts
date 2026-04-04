@@ -245,8 +245,8 @@ export function activeTaglines(options: TaglineOptions = {}): string[] {
 
 export function pickTagline(options: TaglineOptions = {}): string {
   const env = options.env ?? process.env;
-  // Check DenchClaw env first, fall back to legacy OpenClaw env
-  const override = env?.DENCHCLAW_TAGLINE_INDEX ?? env?.OPENCLAW_TAGLINE_INDEX;
+  // Check AppLy Claw env first, fall back to legacy env
+  const override = env?.APPLYCLAW_TAGLINE_INDEX ?? env?.DENCHCLAW_TAGLINE_INDEX ?? env?.OPENCLAW_TAGLINE_INDEX;
   if (override !== undefined) {
     const parsed = Number.parseInt(override, 10);
     if (!Number.isNaN(parsed) && parsed >= 0) {

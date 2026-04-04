@@ -1,5 +1,6 @@
-import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { resolveOpenClawStateDir } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,15 @@ function readJobsFile(): Array<Record<string, unknown>> {
   } catch {
     return [];
   }
+}
+
+/** Write jobs back to jobs.json. */
+function writeJobsFile(jobs: Array<Record<string, unknown>>): void {
+  if (!existsSync(CRON_DIR)) {
+    mkdirSync(CRON_DIR, { recursive: true });
+  }
+  const store: CronStoreFile = { version: 1, jobs };
+  writeFileSync(JOBS_FILE, JSON.stringify(store, null, 2) + "\n", "utf-8");
 }
 
 /** Compute next wake time from job states (minimum nextRunAtMs among enabled jobs). */
@@ -96,4 +106,80 @@ export async function GET() {
       nextWakeAtMs,
     },
   });
+}
+
+/** POST /api/cron/jobs -- create a new cron job */
+export async function POST(request: Request) {
+  try {
+    const body = await request.json() as Record<string, unknown>;
+    const now = Date.now();
+    const job: Record<string, unknown> = {
+      id: randomUUID(),
+      name: body.name ?? "Untitled Job",
+      description: body.description ?? "",
+      enabled: body.enabled ?? true,
+      deleteAfterRun: body.deleteAfterRun ?? false,
+      createdAtMs: now,
+      updatedAtMs: now,
+      schedule: body.schedule ?? { kind: "every", everyMs: 3600000 },
+      sessionTarget: body.sessionTarget ?? "isolated",
+      wakeMode: body.wakeMode ?? "next-heartbeat",
+      payload: body.payload ?? { kind: "agentTurn", message: "" },
+      delivery: body.delivery,
+      state: {},
+    };
+    const jobs = readJobsFile();
+    jobs.push(job);
+    writeJobsFile(jobs);
+    return Response.json(job, { status: 201 });
+  } catch {
+    return Response.json({ error: "Invalid request body" }, { status: 400 });
+  }
+}
+
+/** PUT /api/cron/jobs -- update an existing cron job (requires { id, ...fields }) */
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json() as Record<string, unknown>;
+    const id = body.id;
+    if (typeof id !== "string") {
+      return Response.json({ error: "Missing job id" }, { status: 400 });
+    }
+    const jobs = readJobsFile();
+    const idx = jobs.findIndex((j) => j.id === id);
+    if (idx === -1) {
+      return Response.json({ error: "Job not found" }, { status: 404 });
+    }
+    const existing = jobs[idx];
+    const updated: Record<string, unknown> = { ...existing, ...body, updatedAtMs: Date.now() };
+    // Preserve fields that shouldn't be overwritten
+    updated.id = existing.id;
+    updated.createdAtMs = existing.createdAtMs;
+    jobs[idx] = updated;
+    writeJobsFile(jobs);
+    return Response.json(updated);
+  } catch {
+    return Response.json({ error: "Invalid request body" }, { status: 400 });
+  }
+}
+
+/** DELETE /api/cron/jobs -- delete a cron job (requires { id } in body) */
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json() as Record<string, unknown>;
+    const id = body.id;
+    if (typeof id !== "string") {
+      return Response.json({ error: "Missing job id" }, { status: 400 });
+    }
+    const jobs = readJobsFile();
+    const idx = jobs.findIndex((j) => j.id === id);
+    if (idx === -1) {
+      return Response.json({ error: "Job not found" }, { status: 404 });
+    }
+    jobs.splice(idx, 1);
+    writeJobsFile(jobs);
+    return Response.json({ ok: true });
+  } catch {
+    return Response.json({ error: "Invalid request body" }, { status: 400 });
+  }
 }

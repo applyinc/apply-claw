@@ -26,7 +26,7 @@ export function isDaemonlessMode(
   opts?: { skipDaemonInstall?: boolean },
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  return Boolean(opts?.skipDaemonInstall) || env.DENCHCLAW_DAEMONLESS === "1";
+  return Boolean(opts?.skipDaemonInstall) || env.APPLYCLAW_DAEMONLESS === "1" || env.DENCHCLAW_DAEMONLESS === "1";
 }
 
 // Support historical (and occasionally misspelled) legacy state dirs.
@@ -66,7 +66,7 @@ export function resolveNewStateDir(homedir: () => string = resolveDefaultHomeDir
 
 /**
  * State directory for mutable data (sessions, logs, caches).
- * DenchClaw always pins this to ~/.openclaw-dench.
+ * AppLy Claw always pins this to ~/.openclaw-dench.
  */
 export function resolveStateDir(
   env: NodeJS.ProcessEnv = process.env,
@@ -206,7 +206,7 @@ export function resolveDefaultConfigCandidates(
 }
 
 export const DEFAULT_GATEWAY_PORT = 18789;
-export const DENCHCLAW_DEFAULT_GATEWAY_PORT = 19001;
+export const APPLYCLAW_DEFAULT_GATEWAY_PORT = 19001;
 
 /**
  * Gateway lock directory (ephemeral).
@@ -265,7 +265,7 @@ export function resolveGatewayPort(
   }
   const profile = env.OPENCLAW_PROFILE?.trim();
   if (profile === "dench") {
-    return DENCHCLAW_DEFAULT_GATEWAY_PORT;
+    return APPLYCLAW_DEFAULT_GATEWAY_PORT;
   }
   return DEFAULT_GATEWAY_PORT;
 }
