@@ -10,6 +10,7 @@ on:
       - "packages/api-schema/**"
       - "Dockerfile"
       - "fly.toml"
+      - ".github/workflows/deploy-control-api.yml"
   workflow_dispatch:
 
 permissions:
