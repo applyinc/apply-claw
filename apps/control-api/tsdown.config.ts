@@ -3,4 +3,5 @@ import { defineConfig } from "tsdown";
 export default defineConfig({
   fixedExtension: false,
   platform: "node",
+  unbundle: true,
 });
