@@ -47,9 +47,6 @@ COPY apps/control-api/ apps/control-api/
 
 RUN pnpm --filter @applyclaw/control-api build
 
-# Prune dev dependencies for smaller image
-RUN pnpm prune --prod --filter @applyclaw/control-api...
-
 # ── Stage 2: Production runner ───────────────────────────────────────────────
 FROM node:22-slim AS runner
 
