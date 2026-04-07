@@ -101,7 +101,4 @@ WORKDIR /app/apps/control-api
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:4001/health').then(r=>{if(!r.ok)throw 1}).catch(()=>process.exit(1))"
 
-# Debug: verify dist exists (remove after confirming)
-RUN ls -la /app/apps/control-api/dist/ || echo "DIST NOT FOUND"
-
-CMD ["node", "dist/index.js"]
+CMD ["sh", "-c", "node dist/index.mjs 2>/dev/null || node dist/index.js"]
