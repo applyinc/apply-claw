@@ -1,28 +1,27 @@
 {
-  "name": "denchclaw",
-  "version": "2.4.6",
-  "description": "Fully Managed OpenClaw Framework for managing your CRM, Sales Automation and Outreach agents. The only local productivity tool you need.",
+  "name": "applyclaw",
+  "version": "0.1.0",
+  "description": "AppLy Claw — Managed OpenClaw service for CRM, Sales Automation and Outreach agents.",
   "keywords": [],
-  "homepage": "https://github.com/DenchHQ/DenchClaw#readme",
+  "homepage": "https://github.com/applyinc/apply-claw#readme",
   "bugs": {
-    "url": "https://github.com/DenchHQ/DenchClaw/issues"
+    "url": "https://github.com/applyinc/apply-claw/issues"
   },
   "license": "MIT",
-  "author": "Kumar Abhirup <kumar@dench.com>, Dench.com <support@dench.com>",
+  "author": "yuya-okada",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/DenchHQ/DenchClaw.git"
+    "url": "git+https://github.com/applyinc/apply-claw.git"
   },
   "bin": {
-    "dench": "denchclaw.mjs",
-    "denchclaw": "denchclaw.mjs"
+    "applyclaw": "applyclaw.mjs"
   },
   "files": [
     "apps/web/.next/standalone/",
     "apps/web/.next/static/",
     "apps/web/public/",
     "LICENSE",
-    "denchclaw.mjs",
+    "applyclaw.mjs",
     "README.md",
     "assets/",
     "dist/",
@@ -33,19 +32,23 @@
   "main": "dist/entry.js",
   "exports": {
     ".": "./dist/entry.js",
-    "./cli-entry": "./denchclaw.mjs"
+    "./cli-entry": "./applyclaw.mjs"
   },
   "scripts": {
     "build": "tsdown",
     "build:plugin-env": "node scripts/build-plugin-env.mjs",
     "check": "pnpm format:check && pnpm lint",
-    "denchclaw": "node denchclaw.mjs",
-    "dev": "node denchclaw.mjs",
+    "applyclaw": "node applyclaw.mjs",
+    "control-api:build": "pnpm --dir apps/control-api build",
+    "control-api:dev": "pnpm --dir apps/control-api dev",
+    "control-api:start": "pnpm --dir apps/control-api start",
+    "dev": "node applyclaw.mjs",
+    "dev:all": "pnpm --parallel --stream control-api:dev web:dev",
     "format": "oxfmt --write",
     "format:check": "oxfmt --check",
     "lint": "oxlint --type-aware",
     "prepack": "pnpm build:plugin-env && pnpm build && pnpm web:build && pnpm web:prepack",
-    "start": "node denchclaw.mjs",
+    "start": "node applyclaw.mjs",
     "test": "pnpm test:cli && pnpm --dir apps/web test",
     "test:cli": "vitest run --config vitest.unit.config.ts src/cli/run-main.test.ts src/cli/bootstrap-external.test.ts src/cli/bootstrap-external.bootstrap-command.test.ts src/cli/dench-cloud.test.ts src/cli/workspace-seed.test.ts src/cli/web-runtime.test.ts src/cli/web-runtime-command.test.ts src/cli/flatten-standalone-deps.test.ts",
     "test:web": "pnpm --dir apps/web test",
@@ -72,6 +75,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
+    "openclaw": "^2026.4.2",
     "oxfmt": "0.34.0",
     "oxlint": "^1.49.0",
     "oxlint-tsgolint": "^0.14.2",

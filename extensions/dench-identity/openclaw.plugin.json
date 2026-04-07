@@ -1,8 +1,8 @@
 {
   "id": "dench-identity",
-  "name": "DenchClaw Identity",
+  "name": "AppLy Claw Identity",
   "version": "1.0.0",
-  "description": "Injects the DenchClaw identity and behavioral contracts into the agent system prompt.",
+  "description": "Injects the AppLy Claw identity and behavioral contracts into the agent system prompt.",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,

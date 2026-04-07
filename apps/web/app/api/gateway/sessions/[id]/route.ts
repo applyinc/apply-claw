@@ -1,5 +1,4 @@
-import { readFileSync } from "node:fs";
-import { findSessionTranscriptFile, parseTranscriptToMessages } from "@/lib/gateway-transcript";
+import { fetchControlApi } from "@/lib/control-api";
 
 export const dynamic = "force-dynamic";
 
@@ -8,14 +7,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-
-  const transcriptFile = findSessionTranscriptFile(id);
-  if (!transcriptFile) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
-  }
-
-  const content = readFileSync(transcriptFile, "utf-8");
-  const messages = parseTranscriptToMessages(content);
-
-  return Response.json({ id, messages });
+  const upstream = await fetchControlApi(`/gateway/sessions/${encodeURIComponent(id)}`, {
+    method: "GET",
+  });
+  const data = await upstream.json().catch(() => ({ error: "Session not found" }));
+  return Response.json(data, { status: upstream.status });
 }

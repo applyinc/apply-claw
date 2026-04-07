@@ -1,13 +1,9 @@
-/**
- * GET /api/chat/active
- *
- * Returns the session IDs of all currently running agent sessions.
- * Used by the sidebar to show streaming indicators.
- */
-import { getRunningSessionIds } from "@/lib/active-runs";
+import { fetchControlApi } from "@/lib/control-api";
 
 export const runtime = "nodejs";
 
-export function GET() {
-	return Response.json({ sessionIds: getRunningSessionIds() });
+export async function GET() {
+  const upstream = await fetchControlApi("/chat/active", { method: "GET" });
+  const data = await upstream.json().catch(() => ({ sessionIds: [] }));
+  return Response.json(data, { status: upstream.status });
 }

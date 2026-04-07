@@ -126,7 +126,7 @@ export function CronJobDetail({
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-1">
           <h1
-            className="font-instrument text-3xl tracking-tight"
+            className="font-roboto text-3xl tracking-tight"
             style={{ color: "var(--color-text)" }}
           >
             {job.name}

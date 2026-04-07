@@ -91,6 +91,7 @@ import {
   isVirtualPath,
 } from "@/lib/workspace-paths";
 import dynamic from "next/dynamic";
+import { ProductNavRail } from "../components/product-nav-rail";
 
 const TerminalDrawer = dynamic(
   () => import("../components/terminal/terminal-drawer"),
@@ -2283,6 +2284,13 @@ function WorkspacePageInner() {
       style={{ background: "var(--color-main-bg)" }}
       onClick={handleContainerClick}
     >
+      {/* Product navigation rail — far left icon column */}
+      {!isMobile && (
+        <ProductNavRail activeProduct="home" />
+      )}
+
+      <div className="flex flex-1 min-w-0">
+
       {/* Left sidebar — static on desktop (resizable), drawer overlay on mobile */}
       {isMobile ? (
         sidebarOpen && (
@@ -2986,6 +2994,7 @@ function WorkspacePageInner() {
           <TerminalDrawer onClose={() => setTerminalOpen(false)} cwd={workspaceRoot ?? undefined} />
         )}
       </main>
+      </div>{/* end Home product content */}
 
       {/* Mobile entry detail panel */}
       {isMobile && entryModal && (
@@ -4310,7 +4319,7 @@ function DirectoryListing({
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <h1
-        className="font-instrument text-3xl tracking-tight mb-1 capitalize"
+        className="font-roboto text-3xl tracking-tight mb-1 capitalize"
         style={{ color: "var(--color-text)" }}
       >
         {node.name}
@@ -4421,7 +4430,7 @@ function WelcomeView({
   return (
     <div className="p-8 max-w-4xl mx-auto">
       <h1
-        className="font-instrument text-3xl tracking-tight mb-2"
+        className="font-roboto text-3xl tracking-tight mb-2"
         style={{ color: "var(--color-text)" }}
       >
         Workspace

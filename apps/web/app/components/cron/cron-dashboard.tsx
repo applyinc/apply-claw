@@ -173,7 +173,7 @@ export function CronDashboard({
       <div className="flex items-end justify-between mb-6">
         <div>
           <h1
-            className="font-instrument text-3xl tracking-tight mb-1"
+            className="font-roboto text-3xl tracking-tight mb-1"
             style={{ color: "var(--color-text)" }}
           >
             Cron

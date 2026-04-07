@@ -68,7 +68,7 @@ export function EmptyState({
 			{/* Text */}
 			<div className="text-center max-w-md">
 				<h2
-					className="font-instrument text-2xl tracking-tight mb-2"
+					className="font-roboto text-2xl tracking-tight mb-2"
 					style={{ color: "var(--color-text)" }}
 				>
 					{workspaceExists

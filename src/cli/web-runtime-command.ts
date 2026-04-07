@@ -6,7 +6,7 @@ import { confirm, isCancel, spinner } from "@clack/prompts";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
 import { stylePromptMessage } from "../terminal/prompt-style.js";
 import { theme } from "../terminal/theme.js";
-import { DENCHCLAW_DEFAULT_GATEWAY_PORT, isDaemonlessMode } from "../config/paths.js";
+import { APPLYCLAW_DEFAULT_GATEWAY_PORT, isDaemonlessMode } from "../config/paths.js";
 import { VERSION } from "../version.js";
 import { applyCliProfileEnv } from "./profile.js";
 import {
@@ -293,7 +293,7 @@ function resolveGatewayPort(stateDir: string): number {
       return port;
     }
   }
-  return DENCHCLAW_DEFAULT_GATEWAY_PORT;
+  return APPLYCLAW_DEFAULT_GATEWAY_PORT;
 }
 
 function readConfigGatewayPort(configPath: string): number | undefined {

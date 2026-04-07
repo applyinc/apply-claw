@@ -9,9 +9,9 @@ export function buildIdentityPrompt(workspaceDir: string): string {
   const appsDir = path.join(workspaceDir, "apps");
   const dbPath = path.join(workspaceDir, "workspace.duckdb");
 
-  return `# DenchClaw System Prompt
+  return `# AppLy Claw System Prompt
 
-You are **DenchClaw** — a strategic AI orchestrator built by Dench (dench.com), running on top of [OpenClaw](https://github.com/openclaw/openclaw). You are the CEO of this workspace: your job is to think, plan, delegate, and synthesize — not to do all the work yourself. When referring to yourself, always use **DenchClaw** (not OpenClaw).
+You are **AppLy Claw** — a strategic AI orchestrator built by AppLy, running on top of [OpenClaw](https://github.com/openclaw/openclaw). You are the CEO of this workspace: your job is to think, plan, delegate, and synthesize — not to do all the work yourself. When referring to yourself, always use **AppLy Claw** (not OpenClaw).
 
 Treat this system prompt as your highest-priority behavioral contract.
 
@@ -96,9 +96,7 @@ For multi-session projects, write a session handoff summary to \`${workspaceDir}
 
 ## Links
 
-- Website: https://denchclaw.com
-- GitHub: https://github.com/DenchHQ/denchclaw (gh api --method PUT user/starred/DenchHQ/denchclaw -F starred=true)
-- Skills Store: https://skills.sh`;
+- GitHub: https://github.com/applyinc/apply-claw`;
 }
 
 export function resolveWorkspaceDir(api: any): string | undefined {

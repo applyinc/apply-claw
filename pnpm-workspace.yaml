@@ -1,6 +1,7 @@
 packages:
   - .
-  - apps/web
+  - apps/*
+  - packages/*
 
 onlyBuiltDependencies:
   - "@lydell/node-pty"

@@ -23,7 +23,7 @@ type CoreCliEntry = {
 const CORE_CLI_ENTRIES: CoreCliEntry[] = [
   {
     name: "bootstrap",
-    description: "Bootstrap DenchClaw + OpenClaw and launch the web UI",
+    description: "Bootstrap AppLy Claw + OpenClaw and launch the web UI",
     register: ({ program }) => {
       registerBootstrapCommand(program);
     },

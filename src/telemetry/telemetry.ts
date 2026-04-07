@@ -12,7 +12,7 @@ let _identified = false;
 export function isTelemetryEnabled(): boolean {
   if (!POSTHOG_KEY) return false;
   if (process.env.DO_NOT_TRACK === "1") return false;
-  if (process.env.DENCHCLAW_TELEMETRY_DISABLED === "1") return false;
+  if (process.env.APPLYCLAW_TELEMETRY_DISABLED === "1" || process.env.DENCHCLAW_TELEMETRY_DISABLED === "1") return false;
   if (process.env.CI) return false;
 
   try {
@@ -30,7 +30,7 @@ function getMachineContext(): Record<string, unknown> {
     os: process.platform,
     arch: process.arch,
     node_version: process.version,
-    denchclaw_version: VERSION,
+    applyclaw_version: VERSION,
     openclaw_version: resolveOpenClawVersion(),
   };
 }
@@ -50,7 +50,7 @@ function ensureClient(): PostHog | null {
 export function track(event: string, properties?: Record<string, unknown>): void {
   if (!isTelemetryEnabled()) return;
 
-  if (process.env.DENCHCLAW_TELEMETRY_DEBUG === "1") {
+  if (process.env.APPLYCLAW_TELEMETRY_DEBUG === "1" || process.env.DENCHCLAW_TELEMETRY_DEBUG === "1") {
     process.stderr.write(
       `[telemetry:debug] ${JSON.stringify({ event, properties }, null, 2)}\n`,
     );
