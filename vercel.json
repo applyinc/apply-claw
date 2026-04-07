@@ -1,6 +1,0 @@
-{
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm --filter @applyclaw/shared-config build && pnpm --filter @applyclaw/api-schema build && pnpm --filter applyclaw-web build",
-  "outputDirectory": "apps/web/.next",
-  "framework": "nextjs"
-}
