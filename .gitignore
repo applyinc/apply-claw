@@ -3,7 +3,7 @@ node_modules
 .env
 docker-compose.extra.yml
 dist
-pnpm-lock.yaml
+# pnpm-lock.yaml — committed for Vercel/CI to detect pnpm
 bun.lock
 bun.lockb
 coverage
