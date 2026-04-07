@@ -66,7 +66,7 @@ export function TaskListItem(props: Props) {
             type="button"
             variant="ghost"
             size="icon"
-            className="h-9 w-9 rounded-[12px] text-neutral-500 hover:bg-white hover:text-[#d33b2f]"
+            className="h-9 w-9 rounded-[12px] text-neutral-500 hover:bg-white hover:text-neutral-900"
             title="Delete"
             onClick={onDeleteButtonClick}
           >

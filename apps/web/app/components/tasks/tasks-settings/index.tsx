@@ -34,7 +34,7 @@ export function TasksSettings(_props: Props) {
       <div className="mx-auto max-w-7xl px-5 py-7 md:px-7">
         <div className="mb-6">
           <div>
-            <h1 className="text-[2rem] font-semibold tracking-tight text-[#d33b2f]">Cron Jobs</h1>
+            <h1 className="text-[2rem] font-semibold tracking-tight text-neutral-900">Cron Jobs</h1>
             <p className="mt-1 text-sm text-neutral-500">
               Manage scheduled cron jobs for your agents
             </p>
@@ -46,7 +46,7 @@ export function TasksSettings(_props: Props) {
             <div className="rounded-[16px] border border-neutral-200 bg-white px-4 py-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-neutral-500">Enabled</p>
               <div className="mt-3">
-                <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">
+                <span className="inline-flex rounded-full border border-neutral-300 bg-neutral-100 px-3 py-1 text-sm font-medium text-neutral-700">
                   {enabledCount > 0 ? "Yes" : "No"}
                 </span>
               </div>

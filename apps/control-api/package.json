@@ -1,0 +1,43 @@
+{
+  "name": "@applyclaw/control-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./router": {
+      "types": "./dist/router.d.ts",
+      "default": "./dist/router.js"
+    }
+  },
+  "scripts": {
+    "build": "tsdown src/index.ts src/router.ts src/app.ts src/context.ts src/middleware.ts src/version.ts src/workspace-service.ts src/filesystem-service.ts --out-dir dist",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@applyclaw/api-schema": "workspace:*",
+    "@applyclaw/shared-config": "workspace:*",
+    "@hono/node-server": "^1.19.4",
+    "@hono/trpc-server": "^0.4.0",
+    "@trpc/server": "^11.7.1",
+    "chokidar": "^5.0.0",
+    "hono": "^4.9.7",
+    "node-pty": "^1.1.0",
+    "ws": "^8.20.0",
+    "yaml": "^2.8.2",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "tsdown": "^0.20.3",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

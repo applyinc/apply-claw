@@ -27,7 +27,7 @@ export function EditJobScreen(props: Props) {
             </Link>
           </Button>
           <div>
-            <h1 className="text-[2rem] font-semibold tracking-tight text-[#d33b2f]">Edit Job</h1>
+            <h1 className="text-[2rem] font-semibold tracking-tight text-neutral-900">Edit Job</h1>
             <p className="mt-1 text-sm text-neutral-500">Update the scheduled wakeup or agent run.</p>
           </div>
         </div>

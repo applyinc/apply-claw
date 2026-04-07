@@ -24,7 +24,7 @@ export function NewJobScreen(_props: Props) {
             </Link>
           </Button>
           <div>
-            <h1 className="text-[2rem] font-semibold tracking-tight text-[#d33b2f]">New Job</h1>
+            <h1 className="text-[2rem] font-semibold tracking-tight text-neutral-900">New Job</h1>
             <p className="mt-1 text-sm text-neutral-500">Create a scheduled wakeup or agent run.</p>
           </div>
         </div>

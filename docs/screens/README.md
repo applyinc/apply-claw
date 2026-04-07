@@ -16,3 +16,4 @@
 - `tasks.md`: `/tasks` のタスク管理画面仕様
 - `tasks-new.md`: `/tasks/new` のタスク新規作成画面仕様
 - `tasks-edit.md`: `/tasks/[jobId]/edit` のタスク編集画面仕様
+- `workspace.md`: `/` のワークスペース画面仕様

@@ -1,66 +1,10 @@
-import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { join } from "node:path";
-import { resolveOpenClawStateDir, resolveWorkspaceRoot } from "@/lib/workspace";
+import { fetchControlApi } from "@/lib/control-api";
 
 export const dynamic = "force-dynamic";
-
-type MemoryFile = {
-  name: string;
-  path: string;
-  sizeBytes: number;
-};
+export const runtime = "nodejs";
 
 export async function GET() {
-  const stateDir = resolveOpenClawStateDir();
-  const workspaceDir = resolveWorkspaceRoot() ?? join(stateDir, "workspace");
-  let mainMemory: string | null = null;
-  const dailyLogs: MemoryFile[] = [];
-
-  // Read main MEMORY.md
-  for (const filename of ["MEMORY.md", "memory.md"]) {
-    const memPath = join(workspaceDir, filename);
-    if (existsSync(memPath)) {
-      try {
-        mainMemory = readFileSync(memPath, "utf-8");
-      } catch {
-        // skip unreadable
-      }
-      break;
-    }
-  }
-
-  // Scan daily log files
-  const memoryDir = join(workspaceDir, "memory");
-  if (existsSync(memoryDir)) {
-    try {
-      const entries = readdirSync(memoryDir, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isFile() || !entry.name.endsWith(".md")) {
-          continue;
-        }
-        const filePath = join(memoryDir, entry.name);
-        try {
-          const content = readFileSync(filePath, "utf-8");
-          dailyLogs.push({
-            name: entry.name,
-            path: filePath,
-            sizeBytes: Buffer.byteLength(content, "utf-8"),
-          });
-        } catch {
-          // skip
-        }
-      }
-    } catch {
-      // dir unreadable
-    }
-  }
-
-  // Sort daily logs by name (date-based filenames sort chronologically)
-  dailyLogs.sort((a, b) => b.name.localeCompare(a.name));
-
-  return Response.json({
-    mainMemory,
-    dailyLogs,
-    workspaceDir,
-  });
+  const upstream = await fetchControlApi("/memories", { method: "GET" });
+  const data = await upstream.json().catch(() => ({ mainMemory: null, dailyLogs: [] }));
+  return Response.json(data, { status: upstream.status });
 }

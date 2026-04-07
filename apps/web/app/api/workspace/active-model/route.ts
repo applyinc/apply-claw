@@ -1,23 +1,15 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { resolveOpenClawStateDir } from "@/lib/workspace";
+import { fetchControlApi } from "@/lib/control-api";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export function GET() {
-  const stateDir = resolveOpenClawStateDir();
-  const configPath = join(stateDir, "openclaw.json");
+export async function GET() {
+  const response = await fetchControlApi("/workspace/active-model", {
+    method: "GET",
+  });
+  const data = await response.json().catch(() => ({ model: null }));
 
-  if (!existsSync(configPath)) {
-    return Response.json({ model: null });
-  }
-
-  try {
-    const raw = JSON.parse(readFileSync(configPath, "utf-8"));
-    const primary = raw?.agents?.defaults?.model?.primary;
-    return Response.json({ model: typeof primary === "string" ? primary : null });
-  } catch {
-    return Response.json({ model: null });
-  }
+  return Response.json(data, {
+    status: response.status,
+  });
 }

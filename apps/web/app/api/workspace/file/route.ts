@@ -1,35 +1,15 @@
-import { writeFileSync, mkdirSync, rmSync, statSync } from "node:fs";
-import { dirname } from "node:path";
-import {
-  readWorkspaceFile,
-  safeResolvePath,
-  resolveFilesystemPath,
-  isProtectedSystemPath,
-} from "@/lib/workspace";
+import { fetchControlApi } from "@/lib/control-api";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const path = url.searchParams.get("path");
-
-  if (!path) {
-    return Response.json(
-      { error: "Missing 'path' query parameter" },
-      { status: 400 },
-    );
-  }
-
-  const file = readWorkspaceFile(path);
-  if (!file) {
-    return Response.json(
-      { error: "File not found or access denied" },
-      { status: 404 },
-    );
-  }
-
-  return Response.json(file);
+  const upstream = await fetchControlApi(`/workspace/file?${url.searchParams.toString()}`, {
+    method: "GET",
+  });
+  const data = await upstream.json().catch(() => ({ error: "Failed to load file." }));
+  return Response.json(data, { status: upstream.status });
 }
 
 /**
@@ -39,46 +19,16 @@ export async function GET(req: Request) {
  * Writes a file to the workspace. Creates parent directories as needed.
  */
 export async function POST(req: Request) {
-  let body: { path?: string; content?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  const { path: relPath, content } = body;
-  if (!relPath || typeof relPath !== "string" || typeof content !== "string") {
-    return Response.json(
-      { error: "Missing 'path' and 'content' fields" },
-      { status: 400 },
-    );
-  }
-
-  const targetPath = resolveFilesystemPath(relPath, { allowMissing: true });
-  if (isProtectedSystemPath(targetPath)) {
-    return Response.json(
-      { error: "Cannot modify system file" },
-      { status: 403 },
-    );
-  }
-
-  if (!targetPath) {
-    return Response.json(
-      { error: "Invalid path or path traversal rejected" },
-      { status: 400 },
-    );
-  }
-
-  try {
-    mkdirSync(dirname(targetPath.absolutePath), { recursive: true });
-    writeFileSync(targetPath.absolutePath, content, "utf-8");
-    return Response.json({ ok: true, path: relPath });
-  } catch (err) {
-    return Response.json(
-      { error: err instanceof Error ? err.message : "Write failed" },
-      { status: 500 },
-    );
-  }
+  const body = await req.text();
+  const upstream = await fetchControlApi("/workspace/file", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body,
+  });
+  const data = await upstream.json().catch(() => ({ error: "Write failed" }));
+  return Response.json(data, { status: upstream.status });
 }
 
 /**
@@ -89,45 +39,14 @@ export async function POST(req: Request) {
  * System files (.object.yaml, workspace.duckdb, etc.) are protected.
  */
 export async function DELETE(req: Request) {
-  let body: { path?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  const { path: relPath } = body;
-  if (!relPath || typeof relPath !== "string") {
-    return Response.json(
-      { error: "Missing 'path' field" },
-      { status: 400 },
-    );
-  }
-
-  const targetPath = resolveFilesystemPath(relPath);
-  if (isProtectedSystemPath(targetPath)) {
-    return Response.json(
-      { error: "Cannot delete system file" },
-      { status: 403 },
-    );
-  }
-
-  const absPath = targetPath?.absolutePath ?? safeResolvePath(relPath);
-  if (!absPath) {
-    return Response.json(
-      { error: "File not found or path traversal rejected" },
-      { status: 404 },
-    );
-  }
-
-  try {
-    const stat = statSync(absPath);
-    rmSync(absPath, { recursive: stat.isDirectory() });
-    return Response.json({ ok: true, path: relPath });
-  } catch (err) {
-    return Response.json(
-      { error: err instanceof Error ? err.message : "Delete failed" },
-      { status: 500 },
-    );
-  }
+  const body = await req.text();
+  const upstream = await fetchControlApi("/workspace/file", {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body,
+  });
+  const data = await upstream.json().catch(() => ({ error: "Delete failed" }));
+  return Response.json(data, { status: upstream.status });
 }

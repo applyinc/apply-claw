@@ -5,6 +5,7 @@ import { useTheme } from "next-themes";
 import { FileManagerTree, type TreeNode } from "./file-manager-tree";
 import { ProfileSwitcher } from "./profile-switcher";
 import { CreateWorkspaceDialog } from "./create-workspace-dialog";
+import { OpenAIAccountDialog } from "./openai-account-dialog";
 import { UnicodeSpinner } from "../unicode-spinner";
 import { ChatSessionsSidebar, type WebSession, type SidebarSubagentInfo, type SidebarGatewaySession, type SidebarChannelStatus } from "./chat-sessions-sidebar";
 
@@ -80,20 +81,33 @@ type WorkspaceSidebarProps = {
 
 function ActiveModelLabel() {
 	const [model, setModel] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const loadModel = useCallback(() => {
+    fetch("/api/workspace/active-model")
+      .then((r) => r.json())
+      .then((d) => setModel(d.model ?? null))
+      .catch(() => {});
+  }, []);
 	useEffect(() => {
-		fetch("/api/workspace/active-model")
-			.then((r) => r.json())
-			.then((d) => setModel(d.model ?? null))
-			.catch(() => {});
-	}, []);
+    loadModel();
+	}, [loadModel]);
 	return (
-		<span
-			className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm truncate"
-			style={{ color: "var(--color-text-muted)" }}
-			title={model ?? undefined}
-		>
-			{model ?? "No model"}
-		</span>
+    <>
+		  <button
+        type="button"
+        onClick={() => setDialogOpen(true)}
+			  className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm truncate transition-colors hover:bg-stone-200/60 dark:hover:bg-stone-700/60"
+			  style={{ color: "var(--color-text-muted)" }}
+			  title={model ?? "OpenAI account settings"}
+		  >
+			  {model ?? "No model"}
+		  </button>
+      <OpenAIAccountDialog
+        isOpen={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onUpdated={loadModel}
+      />
+    </>
 	);
 }
 

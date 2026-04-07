@@ -89,7 +89,7 @@ export function TaskForm(props: Props) {
               type="button"
               variant={form.scheduleKind === kind ? "default" : "outline"}
               size="sm"
-              className={form.scheduleKind === kind ? "rounded-[12px] bg-[#d33b2f] text-white hover:bg-[#bf352a]" : "rounded-[12px] border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-100"}
+              className={form.scheduleKind === kind ? "rounded-[12px] bg-neutral-900 text-white hover:bg-neutral-800" : "rounded-[12px] border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-100"}
               onClick={() => setScheduleKind(kind)}
             >
               {kind === "every" ? "Interval" : kind === "cron" ? "Cron" : "One-time"}
@@ -105,7 +105,7 @@ export function TaskForm(props: Props) {
                 type="button"
                 variant={form.everyMs === preset.value ? "default" : "outline"}
                 size="sm"
-                className={form.everyMs === preset.value ? "rounded-[12px] bg-[#d33b2f] text-white hover:bg-[#bf352a]" : "rounded-[12px] border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-100"}
+                className={form.everyMs === preset.value ? "rounded-[12px] bg-neutral-900 text-white hover:bg-neutral-800" : "rounded-[12px] border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-100"}
                 onClick={() => setEveryMs(preset.value)}
               >
                 {preset.label}
@@ -155,7 +155,7 @@ export function TaskForm(props: Props) {
               type="button"
               variant={form.sessionTarget === target ? "default" : "outline"}
               size="sm"
-              className={form.sessionTarget === target ? "rounded-[12px] bg-[#d33b2f] text-white hover:bg-[#bf352a]" : "rounded-[12px] border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-100"}
+              className={form.sessionTarget === target ? "rounded-[12px] bg-neutral-900 text-white hover:bg-neutral-800" : "rounded-[12px] border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-100"}
               onClick={() => setSessionTarget(target)}
             >
               {target === "isolated" ? "Isolated" : "Main agent"}
@@ -168,7 +168,7 @@ export function TaskForm(props: Props) {
         <Label htmlFor="task-enabled" className="text-sm font-medium text-neutral-600">Enabled</Label>
         <Switch
           id="task-enabled"
-          className="data-[state=checked]:bg-[#d33b2f] data-[state=unchecked]:bg-neutral-300"
+          className="data-[state=checked]:bg-neutral-900 data-[state=unchecked]:bg-neutral-300"
           checked={form.enabled}
           onCheckedChange={onEnabledCheckedChange}
         />
@@ -179,7 +179,7 @@ export function TaskForm(props: Props) {
         <Button
           type="button"
           onClick={onSaveButtonClick}
-          className="rounded-[14px] bg-[#d33b2f] px-5 text-white hover:bg-[#bf352a]"
+          className="rounded-[14px] bg-neutral-900 px-5 text-white hover:bg-neutral-800"
           disabled={!canSave}
         >
           <Check size={16} />

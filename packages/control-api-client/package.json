@@ -1,0 +1,28 @@
+{
+  "name": "@applyclaw/control-api-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsdown src/index.ts --out-dir dist",
+    "dev": "tsdown src/index.ts --out-dir dist --watch",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@trpc/client": "^11.7.1",
+    "@applyclaw/control-api": "workspace:*",
+    "@applyclaw/shared-config": "workspace:*"
+  },
+  "devDependencies": {
+    "tsdown": "^0.20.3",
+    "typescript": "^5.9.3"
+  }
+}
