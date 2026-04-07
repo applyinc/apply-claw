@@ -1,7 +1,5 @@
 import { fetchControlApi } from "@/lib/control-api";
 
-export { type WebSessionMeta } from "./shared";
-
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
