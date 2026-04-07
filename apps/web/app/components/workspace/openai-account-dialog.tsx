@@ -89,7 +89,10 @@ export function OpenAIAccountDialog(props: Props) {
       return;
     }
 
-    const interval = window.setInterval(async () => {
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const poll = async () => {
       try {
         const res = await fetch(`/api/model-auth/openai-codex/login?sessionId=${encodeURIComponent(loginSession.id)}`, {
           cache: "no-store",
@@ -97,6 +100,9 @@ export function OpenAIAccountDialog(props: Props) {
         const data = (await res.json()) as OpenAIAuthState & LoginSessionState & { error?: string; currentProfileId?: string | null };
         if (!res.ok) {
           throw new Error(data.error ?? "Failed to refresh login status.");
+        }
+        if (cancelled) {
+          return;
         }
         setLoginSession({
           id: data.id,
@@ -115,14 +121,33 @@ export function OpenAIAccountDialog(props: Props) {
           setBusyAction(null);
           setMessage(data.message ?? null);
           onUpdated?.();
+          return;
         }
       } catch (nextError) {
+        if (cancelled) {
+          return;
+        }
         setBusyAction(null);
+        setLoginSession((current) => current ? { ...current, status: "failed" } : null);
         setError(nextError instanceof Error ? nextError.message : "Failed to refresh login status.");
+        return;
       }
-    }, 1200);
 
-    return () => window.clearInterval(interval);
+      if (!cancelled) {
+        timeoutId = window.setTimeout(() => {
+          void poll();
+        }, 1200);
+      }
+    };
+
+    void poll();
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+    };
   }, [loginSession, onUpdated]);
 
   const runAction = async (action: string, endpoint: string, body?: Record<string, string>) => {

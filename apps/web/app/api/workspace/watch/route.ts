@@ -3,10 +3,11 @@ import { fetchControlApi } from "@/lib/control-api";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(req: Request) {
   const upstream = await fetchControlApi("/workspace/watch", {
     method: "GET",
     cache: "no-store",
+    signal: req.signal,
   });
 
   return new Response(upstream.body, {
