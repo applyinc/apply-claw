@@ -75,10 +75,12 @@ COPY --from=builder /app/packages/shared-config/dist/ ./packages/shared-config/d
 COPY --from=builder /app/packages/api-schema/package.json ./packages/api-schema/package.json
 COPY --from=builder /app/packages/api-schema/dist/ ./packages/api-schema/dist/
 
-# control-api (built dist + node_modules for hoisted native addons)
+# control-api built artifacts
 COPY --from=builder /app/apps/control-api/package.json ./apps/control-api/package.json
 COPY --from=builder /app/apps/control-api/dist/ ./apps/control-api/dist/
-COPY --from=builder /app/apps/control-api/node_modules/ ./apps/control-api/node_modules/
+
+# Workspace-seed (referenced by workspace-service at runtime via relative import)
+COPY --from=builder /app/src/cli/workspace-seed.ts ./src/cli/workspace-seed.ts
 
 # Create state directory
 RUN mkdir -p /data && chown appuser:appuser /data
@@ -98,5 +100,8 @@ WORKDIR /app/apps/control-api
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:4001/health').then(r=>{if(!r.ok)throw 1}).catch(()=>process.exit(1))"
+
+# Debug: verify dist exists (remove after confirming)
+RUN ls -la /app/apps/control-api/dist/ || echo "DIST NOT FOUND"
 
 CMD ["node", "dist/index.js"]
