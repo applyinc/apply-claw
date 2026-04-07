@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3100",
-    "build": "cd ../../packages/shared-config && npx tsdown src/index.ts --out-dir dist && cd ../api-schema && npx tsdown src/index.ts --out-dir dist && cd ../../apps/web && next build",
+    "build": "next build",
+    "build:deps": "cd ../../packages/shared-config && npx tsdown src/index.ts --out-dir dist && cd ../api-schema && npx tsdown src/index.ts --out-dir dist",
+    "vercel-build": "npm run build:deps && next build",
     "start": "next start --port 3100",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -113,3 +113,4 @@ dist/protocol.schema.json
 
 # Generated at build time (bakes POSTHOG_KEY into the plugin)
 extensions/posthog-analytics/lib/build-env.js
+.vercel
