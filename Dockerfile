@@ -72,12 +72,15 @@ COPY --from=builder /app/node_modules/ ./node_modules/
 
 # Shared packages (built dist only)
 COPY --from=builder /app/packages/shared-config/package.json ./packages/shared-config/package.json
+COPY --from=builder /app/packages/shared-config/node_modules/ ./packages/shared-config/node_modules/
 COPY --from=builder /app/packages/shared-config/dist/ ./packages/shared-config/dist/
 COPY --from=builder /app/packages/api-schema/package.json ./packages/api-schema/package.json
+COPY --from=builder /app/packages/api-schema/node_modules/ ./packages/api-schema/node_modules/
 COPY --from=builder /app/packages/api-schema/dist/ ./packages/api-schema/dist/
 
 # control-api built artifacts
 COPY --from=builder /app/apps/control-api/package.json ./apps/control-api/package.json
+COPY --from=builder /app/apps/control-api/node_modules/ ./apps/control-api/node_modules/
 COPY --from=builder /app/apps/control-api/dist/ ./apps/control-api/dist/
 
 # Workspace-seed (referenced by workspace-service at runtime via relative import)
