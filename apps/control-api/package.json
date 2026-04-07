@@ -18,7 +18,7 @@
   "scripts": {
     "build": "tsdown src/index.ts src/router.ts src/app.ts src/context.ts src/middleware.ts src/version.ts src/workspace-service.ts src/filesystem-service.ts --out-dir dist",
     "dev": "tsx watch src/index.ts",
-    "start": "node dist/index.js",
+    "start": "if [ -f dist/index.mjs ]; then exec node dist/index.mjs; else exec node dist/index.js; fi",
     "typecheck": "tsc --project tsconfig.json --noEmit"
   },
   "dependencies": {
