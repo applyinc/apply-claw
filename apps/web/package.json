@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3100",
-    "build": "pnpm --filter @applyclaw/shared-config build && pnpm --filter @applyclaw/api-schema build && next build",
+    "build": "cd ../../packages/shared-config && npx tsdown src/index.ts --out-dir dist && cd ../api-schema && npx tsdown src/index.ts --out-dir dist && cd ../../apps/web && next build",
     "start": "next start --port 3100",
     "test": "vitest run",
     "test:watch": "vitest"
