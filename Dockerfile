@@ -39,6 +39,9 @@ COPY packages/api-schema/ packages/api-schema/
 RUN pnpm --filter @applyclaw/shared-config build && \
     pnpm --filter @applyclaw/api-schema build
 
+# Copy root src/ files referenced by control-api (workspace-seed.ts)
+COPY src/cli/workspace-seed.ts src/cli/
+
 # Copy control-api source and build
 COPY apps/control-api/ apps/control-api/
 
