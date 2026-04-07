@@ -90,7 +90,7 @@ export function OpenAIAccountDialog(props: Props) {
     }
 
     let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let timeoutId: number | null = null;
 
     const poll = async () => {
       try {
