@@ -1,0 +1,70 @@
+# Version control
+.git
+.gitignore
+
+# IDE / editor
+.idea
+.vscode
+.cursor
+.claude
+.serena
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies (will be installed in Docker)
+**/node_modules/
+.pnpm-store
+
+# Build outputs (will be rebuilt in Docker)
+**/dist/
+**/.next/
+**/coverage/
+
+# Lock files not needed (pnpm-lock.yaml IS needed)
+bun.lock
+bun.lockb
+package-lock.json
+
+# Native platform apps (not needed for control-api)
+apps/android/
+apps/ios/
+apps/macos/
+apps/shared/
+
+# Web app (deployed to Vercel, not in this Docker image)
+apps/web/
+
+# Documentation & non-runtime files
+docs/
+*.md
+LICENSE
+IDENTITY.md
+USER.md
+
+# Local / secret files
+.env
+.env.*
+.local/
+local/
+memory/
+.agent/
+.agents/
+
+# Test artifacts
+**/test-results/
+**/playwright-report/
+**/__screenshots__/
+**/__pycache__/
+*.pyc
+
+# Misc build artifacts
+*.tsbuildinfo
+*.tgz
+*.bun-build
+bin/
+vendor/
+Core/

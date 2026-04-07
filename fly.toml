@@ -1,0 +1,55 @@
+# fly.toml — Fly.io Machines deployment for AppLy Claw control-api
+#
+# Deploy:
+#   fly deploy
+#
+# Secrets (set via fly secrets set):
+#   CONTROL_API_AUTH_TOKEN  — Bearer token for web→control-api auth
+#   OPENCLAW_GATEWAY_URL   — Gateway WebSocket URL
+#   POSTHOG_KEY            — PostHog analytics key (optional)
+
+app = "applyclaw-control-api"
+primary_region = "nrt"  # Tokyo
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  CONTROL_API_HOST = "0.0.0.0"
+  CONTROL_API_PORT = "4001"
+  OPENCLAW_STATE_DIR = "/data"
+  # Public URL for browser WebSocket connections (terminal WS)
+  CONTROL_API_PUBLIC_URL = "https://applyclaw-control-api.fly.dev"
+
+[http_service]
+  internal_port = 4001
+  force_https = true
+  # "stop" = 完全停止（課金ゼロ）。"suspend" はメモリ課金が継続する
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  # 0 = ゼロスケール可能（リクエスト来たら自動起動、数秒のコールドスタートあり）
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+# Persistent volume for workspace state
+[mounts]
+  source = "applyclaw_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+[checks]
+  [checks.health]
+    type = "http"
+    port = 4001
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"

@@ -1,14 +1,15 @@
+import type { Server as HttpServer } from "node:http";
 import { serve } from "@hono/node-server";
 
 import { resolveControlApiConfig } from "@applyclaw/shared-config";
 
 import { createControlApiApp } from "./app.js";
-import { startTerminalServer } from "./terminal-service.js";
+import { attachTerminalServer } from "./terminal-service.js";
 
 const config = resolveControlApiConfig(process.env);
 const app = createControlApiApp();
 
-serve(
+const server = serve(
   {
     fetch: app.fetch,
     port: config.port,
@@ -19,5 +20,6 @@ serve(
   },
 );
 
-// Start the terminal WebSocket server (PTY over WS)
-startTerminalServer(Number(process.env.TERMINAL_WS_PORT) || 3101);
+// Attach terminal WebSocket handler to the same HTTP server (path: /ws/terminal)
+// serve() returns ServerType (http.Server | http2.Http2SecureServer) — we use HTTP.
+attachTerminalServer(server as unknown as HttpServer);

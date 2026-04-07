@@ -180,20 +180,31 @@ function TerminalViewport({
 
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
 
-      let useProxy = false;
-      let wsPort = DEFAULT_WS_PORT;
+      let wsUrl = `${protocol}//127.0.0.1:${DEFAULT_WS_PORT}`;
       try {
         const res = await fetch("/api/terminal/port");
-        const json = await res.json();
-        if (json.port) wsPort = json.port;
-        if (json.proxy) useProxy = true;
+        const json = await res.json() as { port?: number; proxy?: boolean; wsPath?: string; controlApiBaseUrl?: string };
+        if (json.wsPath) {
+          // control-api serves terminal WS on the same port (e.g. /ws/terminal)
+          const controlApiBase = json.controlApiBaseUrl
+            || process.env.NEXT_PUBLIC_CONTROL_API_BASE_URL
+            || "";
+          if (controlApiBase) {
+            // Remote: derive ws(s) URL from control-api HTTP base URL
+            const base = controlApiBase.replace(/^http/, "ws");
+            wsUrl = `${base}${json.wsPath}`;
+          } else {
+            // Local: same host, different path
+            wsUrl = `${protocol}//${window.location.hostname}:4001${json.wsPath}`;
+          }
+        } else if (json.port) {
+          wsUrl = `${protocol}//127.0.0.1:${json.port}`;
+        } else if (json.proxy) {
+          wsUrl = `${protocol}//${window.location.host}/terminal-ws/`;
+        }
       } catch {}
 
       if (disposed) return;
-
-      const wsUrl = useProxy
-        ? `${protocol}//${window.location.host}/terminal-ws/`
-        : `${protocol}//127.0.0.1:${wsPort}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
