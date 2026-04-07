@@ -145,7 +145,7 @@ export function resolveFilesystemPath(
   };
 }
 
-function isProtectedSystemPath(resolvedPath: ResolvedFilesystemPath | null): boolean {
+export function isProtectedSystemPath(resolvedPath: ResolvedFilesystemPath | null): boolean {
   if (!resolvedPath?.withinWorkspace || resolvedPath.workspaceRelativePath == null) {
     return false;
   }
@@ -394,36 +394,37 @@ function buildBrowseTree(
       return left.name.localeCompare(right.name);
     });
 
-  return filtered.flatMap((entry) => {
+  const nodes: BrowseNode[] = [];
+  for (const entry of filtered) {
     const absolutePath = join(absoluteDir, entry.name);
     const effectiveType = resolveEntryType(entry, absolutePath);
     const symlink = entry.isSymbolicLink() ? { symlink: true } : {};
 
     if (effectiveType === "directory") {
       const children = buildBrowseTree(absolutePath, maxDepth, currentDepth + 1, showHidden);
-      return [{
+      nodes.push({
         name: entry.name,
         path: absolutePath,
         type: "folder",
         children: children.length > 0 ? children : undefined,
         ...symlink,
-      } satisfies BrowseNode];
+      } satisfies BrowseNode);
+      continue;
     }
 
     if (effectiveType === "file") {
       const ext = entry.name.split(".").pop()?.toLowerCase();
       const isDocument = ext === "md" || ext === "mdx";
       const isDatabase = ext === "duckdb" || ext === "sqlite" || ext === "sqlite3" || ext === "db";
-      return [{
+      nodes.push({
         name: entry.name,
         path: absolutePath,
         type: isDatabase ? "database" : isDocument ? "document" : "file",
         ...symlink,
-      } satisfies BrowseNode];
+      } satisfies BrowseNode);
     }
-
-    return [];
-  });
+  }
+  return nodes;
 }
 
 export function getBrowseEntries(dir: string | null, showHidden = false) {

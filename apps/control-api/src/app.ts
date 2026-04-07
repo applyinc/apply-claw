@@ -2,7 +2,7 @@ import { trpcServer } from "@hono/trpc-server";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 
-import { buildControlApiContext } from "./context.js";
+import { buildControlApiContext, type ControlApiEnv } from "./context.js";
 import {
   authMiddleware,
   createCorsMiddleware,
@@ -101,7 +101,7 @@ import {
 import { createWorkspace, deleteWorkspace, getActiveModel, getActiveWorkspaceName, listWorkspaces, switchWorkspace } from "./workspace-service.js";
 
 export function createControlApiApp() {
-  const app = new Hono();
+  const app = new Hono<ControlApiEnv>();
 
   app.use("*", requestIdMiddleware);
   app.use("*", createCorsMiddleware());
@@ -213,7 +213,7 @@ export function createControlApiApp() {
     return c.json(result.data, result.status);
   });
   app.get("/workspace/browse", (c) => {
-    const result = getBrowseEntries(c.req.query("dir"), c.req.query("showHidden") === "1");
+    const result = getBrowseEntries(c.req.query("dir") ?? null, c.req.query("showHidden") === "1");
     return c.json(result.data, result.status);
   });
   app.get("/workspace/tree", async (c) => c.json(
@@ -222,7 +222,7 @@ export function createControlApiApp() {
   app.get("/workspace/context", (c) => c.json(getWorkspaceContext()));
   app.get("/workspace/search-index", async (c) => c.json(await getWorkspaceSearchIndex()));
   app.get("/workspace/suggest-files", async (c) => c.json(
-    await getSuggestedFiles(c.req.query("path"), c.req.query("q")),
+    await getSuggestedFiles(c.req.query("path") ?? null, c.req.query("q") ?? null),
   ));
   app.get("/workspace/path-info", async (c) => {
     const result = await getPathInfo(c.req.query("path") ?? "");
@@ -238,15 +238,16 @@ export function createControlApiApp() {
     const result = getBrowseFile(c.req.query("path") ?? "", c.req.query("raw") === "true");
     if ("error" in result) {
       if ("buffer" in result) {
-        return c.body(result.error, result.status);
+        return new Response(result.error, { status: result.status });
       }
       return c.json({ error: result.error }, result.status);
     }
-    if ("buffer" in result) {
-      return new Response(result.buffer, {
+    if ("buffer" in result && result.buffer) {
+      const buffer = result.buffer;
+      return new Response(buffer, {
         status: result.status,
         headers: {
-          "Content-Length": String(result.buffer.length),
+          "Content-Length": String(buffer.length),
           "Content-Type": result.contentType,
         },
       });
@@ -319,7 +320,7 @@ export function createControlApiApp() {
   app.get("/workspace/raw-file", (c) => {
     const result = getRawFile(c.req.query("path") ?? "");
     if ("error" in result) {
-      return c.body(result.error, result.status);
+      return new Response(result.error, { status: result.status });
     }
     return new Response(result.buffer, {
       status: result.status,
@@ -357,7 +358,7 @@ export function createControlApiApp() {
     const suffix = c.req.path.replace("/workspace/assets/", "");
     const result = getAssetFile(`assets/${suffix}`);
     if ("error" in result) {
-      return c.body(result.error, result.status);
+      return new Response(result.error, { status: result.status });
     }
     return new Response(result.buffer, {
       status: result.status,
@@ -497,7 +498,7 @@ export function createControlApiApp() {
   app.get("/workspace/watch", async (c) => {
     const result = await createWorkspaceWatchStream(c.req.raw.signal);
     if ("error" in result) {
-      return c.body(result.error, result.status);
+      return new Response(result.error, { status: result.status });
     }
     return new Response(result.data, {
       status: result.status,
@@ -687,7 +688,7 @@ export function createControlApiApp() {
     const path = c.req.query("path") ?? "";
     const size = c.req.query("size") ?? "200";
     const result = generateThumbnail(path, size);
-    if ("error" in result) return c.body(result.error, result.status);
+    if ("error" in result) return new Response(result.error, { status: result.status });
     return new Response(result.data, {
       headers: {
         "Content-Type": result.contentType,
@@ -1109,7 +1110,7 @@ export function createControlApiApp() {
         if (!run) return null;
         return { sessionId: session.id, status: run.status };
       })
-      .filter((run): run is { sessionId: string; status: string } => Boolean(run));
+      .filter((run): run is NonNullable<typeof run> => Boolean(run));
 
     const subagents = [...parentSessionKeys.entries()]
       .flatMap(([requesterSessionKey, parentSessionId]) =>
@@ -1214,7 +1215,7 @@ export function createControlApiApp() {
     "/trpc/*",
     trpcServer({
       router: appRouter,
-      createContext: ({ hono: c }) => buildControlApiContext(c),
+      createContext: (_opts, c) => buildControlApiContext(c),
     }),
   );
 

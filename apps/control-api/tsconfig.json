@@ -11,9 +11,9 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "outDir": "dist",
-    "rootDir": "src",
+    "rootDir": "../..",
     "noEmit": true
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "../../src/cli/workspace-seed.ts"],
   "exclude": ["dist", "node_modules"]
 }

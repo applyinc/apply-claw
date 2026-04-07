@@ -399,7 +399,7 @@ export function getModelAuthSummary() {
 }
 
 export function listProfilesSummary() {
-  const workspaces = listWorkspaces();
+  const { workspaces } = listWorkspaces();
   const activeWorkspace = getActiveWorkspaceName() ?? workspaces.find((item) => item.isActive)?.name ?? null;
   return {
     activeProfile: activeWorkspace,
@@ -411,7 +411,7 @@ export function listProfilesSummary() {
 
 export function switchProfileSummary(workspace: string) {
   const result = switchWorkspace(workspace);
-  const selected = listWorkspaces().find((item) => item.name === result.activeWorkspace) ?? null;
+  const selected = listWorkspaces().workspaces.find((item) => item.name === result.activeWorkspace) ?? null;
   return {
     activeProfile: result.activeWorkspace,
     activeWorkspace: result.activeWorkspace,

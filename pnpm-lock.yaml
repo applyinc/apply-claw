@@ -84,6 +84,9 @@ importers:
       node-pty:
         specifier: ^1.1.0
         version: 1.1.0
+      openclaw:
+        specifier: ^2026.4.2
+        version: 2026.4.2(@napi-rs/canvas@0.1.97)
       ws:
         specifier: ^8.20.0
         version: 8.20.0

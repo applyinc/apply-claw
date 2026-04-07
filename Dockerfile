@@ -95,6 +95,7 @@ ENV CONTROL_API_HOST=0.0.0.0
 ENV CONTROL_API_PORT=4001
 ENV TERMINAL_WS_PORT=3101
 ENV OPENCLAW_STATE_DIR=/data
+ENV PATH=/app/node_modules/.bin:/app/apps/control-api/node_modules/.bin:$PATH
 
 EXPOSE 4001
 EXPOSE 3101

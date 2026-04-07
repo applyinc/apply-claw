@@ -2,8 +2,9 @@ import type { MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
 
 import { resolveControlApiConfig } from "@applyclaw/shared-config";
+import type { ControlApiEnv } from "./context.js";
 
-export function createCorsMiddleware(): MiddlewareHandler {
+export function createCorsMiddleware(): MiddlewareHandler<ControlApiEnv> {
   const config = resolveControlApiConfig(process.env);
 
   return cors({
@@ -14,14 +15,14 @@ export function createCorsMiddleware(): MiddlewareHandler {
   });
 }
 
-export const requestIdMiddleware: MiddlewareHandler = async (c, next) => {
+export const requestIdMiddleware: MiddlewareHandler<ControlApiEnv> = async (c, next) => {
   const requestId = crypto.randomUUID();
   c.set("requestId", requestId);
   c.header("X-Control-Api-Request-Id", requestId);
   await next();
 };
 
-export const requestLoggerMiddleware: MiddlewareHandler = async (c, next) => {
+export const requestLoggerMiddleware: MiddlewareHandler<ControlApiEnv> = async (c, next) => {
   const startedAt = Date.now();
   await next();
 
@@ -37,7 +38,7 @@ export const requestLoggerMiddleware: MiddlewareHandler = async (c, next) => {
   );
 };
 
-export const authMiddleware: MiddlewareHandler = async (c, next) => {
+export const authMiddleware: MiddlewareHandler<ControlApiEnv> = async (c, next) => {
   const config = resolveControlApiConfig(process.env);
 
   if (!config.authToken) {
