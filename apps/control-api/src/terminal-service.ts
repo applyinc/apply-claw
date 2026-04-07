@@ -1,12 +1,13 @@
 /**
- * Terminal service — manages PTY sessions over a WebSocket server.
+ * Terminal service — manages PTY sessions over WebSocket.
  *
  * Ported from apps/web/lib/terminal-server.ts.
- * The WebSocket server is started on control-api startup and the browser
- * connects directly to it for terminal I/O.
+ * The WebSocket server is attached to the same HTTP server as control-api
+ * (single port), handling upgrade requests on the `/ws/terminal` path.
  */
 import { WebSocketServer, type WebSocket } from "ws";
-import type { IncomingMessage } from "node:http";
+import type { Server as HttpServer, IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
 import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 import { chmodSync, existsSync } from "node:fs";
@@ -21,7 +22,6 @@ const sessions = new Map<WebSocket, TerminalSession>();
 const _g = globalThis as unknown as {
   __terminalWss?: WebSocketServer;
   __terminalDidFixSpawnHelper?: boolean;
-  __terminalPort?: number;
 };
 
 let wss: WebSocketServer | null = _g.__terminalWss ?? null;
@@ -173,6 +173,39 @@ function handleConnection(ws: WebSocket, _req: IncomingMessage) {
   });
 }
 
+/** WebSocket path for terminal connections. */
+export const TERMINAL_WS_PATH = "/ws/terminal";
+
+/**
+ * Attach the terminal WebSocket server to an existing HTTP server.
+ * Handles upgrade requests on the `/ws/terminal` path only.
+ */
+export function attachTerminalServer(httpServer: HttpServer) {
+  if (wss) return;
+
+  // noServer mode — we manually handle the upgrade event
+  wss = new WebSocketServer({ noServer: true });
+  _g.__terminalWss = wss;
+  wss.on("connection", handleConnection);
+
+  httpServer.on("upgrade", (req: IncomingMessage, socket: Duplex, head: Buffer) => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    if (url.pathname !== TERMINAL_WS_PATH) {
+      // Not a terminal upgrade — ignore (let other handlers deal with it)
+      return;
+    }
+    wss!.handleUpgrade(req, socket, head, (ws) => {
+      wss!.emit("connection", ws, req);
+    });
+  });
+
+  console.log(`[terminal] WebSocket handler attached at path ${TERMINAL_WS_PATH}`);
+}
+
+/**
+ * @deprecated Use `attachTerminalServer()` for single-port mode.
+ * Kept for local dev / standalone usage where a separate port is preferred.
+ */
 export function startTerminalServer(port: number) {
   if (wss) return;
 
@@ -180,7 +213,6 @@ export function startTerminalServer(port: number) {
   _g.__terminalWss = wss;
   wss.on("connection", handleConnection);
   wss.on("listening", () => {
-    _g.__terminalPort = port;
     console.log(`[terminal] WebSocket server listening on ws://127.0.0.1:${port}`);
   });
   wss.on("error", (err) => {
@@ -194,7 +226,8 @@ export function startTerminalServer(port: number) {
 }
 
 export function getTerminalPort(): number | null {
-  return _g.__terminalPort ?? null;
+  // In attached mode, return null (WS runs on the same port as HTTP)
+  return null;
 }
 
 export function stopTerminalServer() {

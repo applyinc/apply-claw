@@ -1,0 +1,36 @@
+name: Deploy control-api to Fly.io
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/control-api/**"
+      - "packages/shared-config/**"
+      - "packages/api-schema/**"
+      - "Dockerfile"
+      - "fly.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-control-api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to Fly.io
+        run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

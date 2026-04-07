@@ -49,7 +49,7 @@ import { createCronJob, deleteCronJob, getCronJobRuns, getCronRunTranscript, lis
 import { generateThumbnail, openFile } from "./desktop-service.js";
 import { getMemories } from "./memory-service.js";
 import { submitFeedback } from "./feedback-service.js";
-import { getTerminalPort } from "./terminal-service.js";
+import { TERMINAL_WS_PATH } from "./terminal-service.js";
 import { getSessionTranscript, listAllSessions } from "./session-service.js";
 import { listSkills } from "./skills-service.js";
 import { createWebSession, deleteWebSession, getWebSession, listWebSessions, updateWebSession, upsertWebSessionMessages, getSessionMeta, readIndex, resolveSessionKey } from "./web-session-service.js";
@@ -1147,11 +1147,12 @@ export function createControlApiApp() {
     return c.json({ subagents });
   });
 
-  // GET /terminal/port — return the terminal WebSocket server port
+  // GET /terminal/port — return terminal WebSocket connection info
   app.get("/terminal/port", (c) => {
-    const port = getTerminalPort();
     const proxy = process.env.DENCHCLAW_DAEMONLESS === "1";
-    return c.json({ port, proxy });
+    // Expose the public control-api URL so the browser can build ws(s):// URLs
+    const controlApiBaseUrl = process.env.CONTROL_API_PUBLIC_URL || "";
+    return c.json({ port: null, proxy, wsPath: TERMINAL_WS_PATH, controlApiBaseUrl });
   });
 
   // POST /feedback — capture $ai_trace for PostHog on thumbs up/down
