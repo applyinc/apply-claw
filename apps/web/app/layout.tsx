@@ -10,8 +10,8 @@ export const metadata: Metadata = {
   description:
     "AI Workspace with an agent that connects to your apps and does the work for you",
   icons: {
-    icon: "/dench-workspace-icon.png",
-    apple: "/dench-workspace-icon.png",
+    icon: "/applyclaw-icon-32.png",
+    apple: "/applyclaw-icon-192.png",
   },
 };
 
