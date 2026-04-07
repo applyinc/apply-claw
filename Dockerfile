@@ -24,13 +24,14 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /app
 
 # Copy workspace config first (cache layer)
-COPY pnpm-workspace.yaml package.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/control-api/package.json apps/control-api/
 COPY packages/shared-config/package.json packages/shared-config/
 COPY packages/api-schema/package.json packages/api-schema/
 
-# Install all workspace dependencies
-RUN pnpm install --filter @applyclaw/control-api...
+# Install all workspace dependencies with the repo lockfile so build output
+# stays identical between local, CI, and Fly images.
+RUN pnpm install --frozen-lockfile --filter @applyclaw/control-api...
 
 # Copy shared package sources and build them
 COPY packages/shared-config/ packages/shared-config/
