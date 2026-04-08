@@ -151,9 +151,9 @@ export function createControlApiApp() {
       provider: OPENAI_CODEX_PROVIDER,
     });
   });
-  app.post("/model-auth/openai-codex/login", () => {
+  app.post("/model-auth/openai-codex/login", async () => {
     try {
-      const result = startOpenAiCodexLoginSession();
+      const result = await startOpenAiCodexLoginSession();
       return Response.json({
         ...result,
         currentProfileId: result.profiles.find((profile) => profile.isCurrent)?.id ?? null,

@@ -1,6 +1,9 @@
-import { execFileSync, spawn } from "node:child_process";
+import { execFile as execFileCb, execFileSync, spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { promisify } from "node:util";
+
+const execFile = promisify(execFileCb);
 
 import { getActiveWorkspaceName, listWorkspaces, resolveOpenClawStateDir, resolveWorkspaceRoot, switchWorkspace } from "./workspace-service.js";
 
@@ -238,20 +241,47 @@ function compareVersions(left: number[] | null, right: number[] | null): number 
   return 0;
 }
 
-function readCommandVersion(commandPath: string): number[] | null {
+async function readCommandVersionAsync(commandPath: string): Promise<number[] | null> {
   try {
-    const output = execFileSync(commandPath, ["--version"], {
+    const { stdout } = await execFile(commandPath, ["--version"], {
       encoding: "utf-8",
       env: process.env,
-      stdio: ["ignore", "pipe", "pipe"],
     });
-    return parseOpenClawVersion(output);
+    return parseOpenClawVersion(stdout);
   } catch {
     return null;
   }
 }
 
+let cachedOpenClawCommand: string | null = null;
+
+export async function resolveOpenClawCommandAsync(): Promise<string> {
+  if (cachedOpenClawCommand) {
+    return cachedOpenClawCommand;
+  }
+  try {
+    const locator = process.platform === "win32" ? "where" : "which";
+    const args = process.platform === "win32" ? ["openclaw"] : ["-a", "openclaw"];
+    const { stdout } = await execFile(locator, args, { encoding: "utf-8" });
+    const candidates = stdout.trim().split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (candidates.length === 0) {
+      throw new Error("openclaw command not found");
+    }
+    const versioned = await Promise.all(
+      candidates.map(async (candidate) => ({ path: candidate, version: await readCommandVersionAsync(candidate) })),
+    );
+    const resolved = versioned.sort((a, b) => compareVersions(b.version, a.version))[0]?.path ?? candidates[0]!;
+    cachedOpenClawCommand = resolved;
+    return resolved;
+  } catch {
+    throw new Error("OpenClaw CLI was not found on PATH.");
+  }
+}
+
 export function resolveOpenClawCommandOrThrow(): string {
+  if (cachedOpenClawCommand) {
+    return cachedOpenClawCommand;
+  }
   try {
     const locator = process.platform === "win32" ? "where" : "which";
     const args = process.platform === "win32" ? ["openclaw"] : ["-a", "openclaw"];
@@ -260,9 +290,9 @@ export function resolveOpenClawCommandOrThrow(): string {
     if (candidates.length === 0) {
       throw new Error("openclaw command not found");
     }
-    return candidates
-      .map((candidate) => ({ path: candidate, version: readCommandVersion(candidate) }))
-      .sort((a, b) => compareVersions(b.version, a.version))[0]?.path ?? candidates[0]!;
+    const resolved = candidates[0]!;
+    cachedOpenClawCommand = resolved;
+    return resolved;
   } catch {
     throw new Error("OpenClaw CLI was not found on PATH.");
   }
@@ -302,7 +332,7 @@ export function getLoginSession(sessionId: string): ModelAuthLoginSession | null
   return session ? currentSessionSnapshot(session) : null;
 }
 
-export function startOpenAiCodexLoginSession(): ModelAuthLoginSession {
+export async function startOpenAiCodexLoginSession(): Promise<ModelAuthLoginSession> {
   cleanExpiredSessions();
   const existing = [...sessions().values()].find(
     (session) => session.provider === OPENAI_CODEX_PROVIDER && session.status === "running",
@@ -311,7 +341,7 @@ export function startOpenAiCodexLoginSession(): ModelAuthLoginSession {
     return currentSessionSnapshot(existing);
   }
 
-  const command = resolveOpenClawCommandOrThrow();
+  const command = await resolveOpenClawCommandAsync();
   const env = buildOpenClawEnv();
   const id = crypto.randomUUID();
   const before = listProviderProfiles(OPENAI_CODEX_PROVIDER).map((profile) => profile.id);
