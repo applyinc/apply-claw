@@ -357,14 +357,17 @@ export async function startOpenAiCodexLoginSession(): Promise<ModelAuthLoginSess
     profiles: listProviderProfiles(OPENAI_CODEX_PROVIDER),
   };
 
+  const loginArgs = ["models", "auth", "login", "--provider", OPENAI_CODEX_PROVIDER];
   const ttyCommand = process.platform === "darwin"
     ? {
         command: "/usr/bin/script",
-        args: ["-q", "/dev/null", command, "models", "auth", "login", "--provider", OPENAI_CODEX_PROVIDER],
+        args: ["-q", "/dev/null", command, ...loginArgs],
       }
     : {
-        command,
-        args: ["models", "auth", "login", "--provider", OPENAI_CODEX_PROVIDER],
+        // On Linux, use `script` to allocate a pseudo-terminal so the CLI
+        // flushes its output immediately instead of block-buffering it.
+        command: "/usr/bin/script",
+        args: ["-qfc", [command, ...loginArgs].join(" "), "/dev/null"],
       };
 
   const child = spawn(ttyCommand.command, ttyCommand.args, {
