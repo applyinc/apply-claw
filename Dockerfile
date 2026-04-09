@@ -87,6 +87,9 @@ COPY --from=builder /app/apps/control-api/dist/ ./apps/control-api/dist/
 # Workspace-seed (referenced by workspace-service at runtime via relative import)
 COPY --from=builder /app/src/cli/workspace-seed.ts ./src/cli/workspace-seed.ts
 
+# Entrypoint script (starts gateway + control-api)
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+
 # Create state directory
 RUN mkdir -p /data && chown appuser:appuser /data
 
@@ -95,6 +98,9 @@ ENV CONTROL_API_HOST=0.0.0.0
 ENV CONTROL_API_PORT=4001
 ENV TERMINAL_WS_PORT=3101
 ENV OPENCLAW_STATE_DIR=/data
+# Gateway runs on localhost inside the container; control-api connects to it
+ENV OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789
+ENV OPENCLAW_GATEWAY_PORT=18789
 ENV PATH=/app/node_modules/.bin:/app/apps/control-api/node_modules/.bin:$PATH
 
 EXPOSE 4001
@@ -107,4 +113,4 @@ WORKDIR /app/apps/control-api
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:4001/health').then(r=>{if(!r.ok)throw 1}).catch(()=>process.exit(1))"
 
-CMD ["sh", "-c", "if [ -f dist/index.mjs ]; then exec node dist/index.mjs; else exec node dist/index.js; fi"]
+CMD ["sh", "/app/docker-entrypoint.sh"]

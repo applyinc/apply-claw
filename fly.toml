@@ -5,7 +5,6 @@
 #
 # Secrets (set via fly secrets set):
 #   CONTROL_API_AUTH_TOKEN  — Bearer token for web→control-api auth
-#   OPENCLAW_GATEWAY_URL   — Gateway WebSocket URL
 #   POSTHOG_KEY            — PostHog analytics key (optional)
 
 app = "applyclaw-control-api"
@@ -52,4 +51,4 @@ primary_region = "nrt"  # Tokyo
     path = "/health"
     interval = "30s"
     timeout = "5s"
-    grace_period = "10s"
+    grace_period = "20s"
