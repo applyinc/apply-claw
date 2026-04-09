@@ -40,6 +40,7 @@ import {
   OPENAI_CODEX_PROVIDER,
   setSelectedProfile,
   startOpenAiCodexLoginSession,
+  submitOAuthCallback,
   switchProfileSummary,
 } from "./model-auth-service.js";
 import { getGatewayChannels, getGatewaySessionMessages, getGatewaySessions } from "./gateway-service.js";
@@ -151,9 +152,9 @@ export function createControlApiApp() {
       provider: OPENAI_CODEX_PROVIDER,
     });
   });
-  app.post("/model-auth/openai-codex/login", async () => {
+  app.post("/model-auth/openai-codex/login", () => {
     try {
-      const result = await startOpenAiCodexLoginSession();
+      const result = startOpenAiCodexLoginSession();
       return Response.json({
         ...result,
         currentProfileId: result.profiles.find((profile) => profile.isCurrent)?.id ?? null,
@@ -162,6 +163,23 @@ export function createControlApiApp() {
       });
     } catch (error) {
       return Response.json({ error: error instanceof Error ? error.message : "OpenAI login failed." }, { status: 500 });
+    }
+  });
+  app.post("/model-auth/openai-codex/login/callback", async (c) => {
+    const body = await c.req.json().catch(() => null) as { sessionId?: string; callbackUrl?: string } | null;
+    if (!body?.sessionId || !body?.callbackUrl) {
+      return c.json({ error: "Missing 'sessionId' or 'callbackUrl'." }, 400);
+    }
+    try {
+      const result = await submitOAuthCallback(body.sessionId, body.callbackUrl);
+      return c.json({
+        ...result,
+        currentProfileId: result.profiles.find((profile) => profile.isCurrent)?.id ?? null,
+        model: OPENAI_CODEX_MODEL,
+        provider: OPENAI_CODEX_PROVIDER,
+      });
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : "OAuth callback failed." }, 500);
     }
   });
   app.post("/model-auth/openai-codex/select", async (c) => {

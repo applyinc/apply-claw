@@ -1,9 +1,6 @@
-import { execFile as execFileCb, execFileSync, spawn } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { promisify } from "node:util";
-
-const execFile = promisify(execFileCb);
 
 import { getActiveWorkspaceName, listWorkspaces, resolveOpenClawStateDir, resolveWorkspaceRoot, switchWorkspace } from "./workspace-service.js";
 
@@ -11,6 +8,13 @@ export const OPENAI_CODEX_PROVIDER = "openai-codex";
 export const OPENAI_CODEX_MODEL = "openai-codex/gpt-5.4";
 const MAIN_AGENT_ID = "main";
 const SESSION_TTL_MS = 15 * 60_000;
+
+// ── OpenAI OAuth constants ──────────────────────────────────────────────────
+const OPENAI_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+const OPENAI_AUTH_URL = "https://auth.openai.com/oauth/authorize";
+const OPENAI_TOKEN_URL = "https://auth.openai.com/oauth/token";
+const OPENAI_REDIRECT_URI = "http://localhost:1455/auth/callback";
+const OPENAI_SCOPES = "openid profile email offline_access";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -22,6 +26,9 @@ type AuthProfileRecord = {
   displayName?: string;
   email?: string;
   login?: string;
+  refresh?: string;
+  access?: string;
+  expires?: number;
 };
 
 type AuthProfilesFile = {
@@ -52,10 +59,12 @@ export type ModelAuthLoginSession = {
   finishedAt: number | null;
   message: string | null;
   profiles: AuthProfileSummary[];
+  authUrl?: string;
 };
 
 type StoredSession = ModelAuthLoginSession & {
-  process?: ReturnType<typeof spawn>;
+  codeVerifier?: string;
+  oauthState?: string;
 };
 
 const globalState = globalThis as typeof globalThis & {
@@ -73,7 +82,6 @@ function cleanExpiredSessions() {
   const now = Date.now();
   for (const [id, session] of sessions()) {
     if (session.finishedAt && now - session.finishedAt > SESSION_TTL_MS) {
-      session.process?.kill();
       sessions().delete(id);
     }
   }
@@ -224,94 +232,89 @@ export function ensurePrimaryModel(modelId = OPENAI_CODEX_MODEL): void {
   writeJsonFile(configPath, next);
 }
 
-function parseOpenClawVersion(raw: string): number[] | null {
-  const match = raw.match(/(\d{4})\.(\d{1,2})\.(\d{1,2})/);
-  if (!match) return null;
-  return match.slice(1).map((segment) => Number.parseInt(segment, 10));
+// ── PKCE helpers ────────────────────────────────────────────────────────────
+
+function generateCodeVerifier(): string {
+  return randomBytes(32).toString("base64url");
 }
 
-function compareVersions(left: number[] | null, right: number[] | null): number {
-  const l = left ?? [0, 0, 0];
-  const r = right ?? [0, 0, 0];
-  for (let index = 0; index < Math.max(l.length, r.length); index += 1) {
-    const lv = l[index] ?? 0;
-    const rv = r[index] ?? 0;
-    if (lv !== rv) return lv - rv;
-  }
-  return 0;
+function computeCodeChallenge(verifier: string): string {
+  return createHash("sha256").update(verifier).digest("base64url");
 }
 
-async function readCommandVersionAsync(commandPath: string): Promise<number[] | null> {
+function buildAuthorizationUrl(codeChallenge: string, state: string): string {
+  const params = new URLSearchParams({
+    client_id: OPENAI_CLIENT_ID,
+    response_type: "code",
+    redirect_uri: OPENAI_REDIRECT_URI,
+    scope: OPENAI_SCOPES,
+    code_challenge: codeChallenge,
+    code_challenge_method: "S256",
+    state,
+    id_token_add_organizations: "true",
+    codex_cli_simplified_flow: "true",
+    originator: "pi",
+  });
+  return `${OPENAI_AUTH_URL}?${params.toString()}`;
+}
+
+// ── JWT helpers (parse without verification — we trust OpenAI's token endpoint) ─
+
+function parseJwtPayload(token: string): Record<string, unknown> {
+  const parts = token.split(".");
+  if (parts.length < 2) return {};
   try {
-    const { stdout } = await execFile(commandPath, ["--version"], {
-      encoding: "utf-8",
-      env: process.env,
-    });
-    return parseOpenClawVersion(stdout);
+    const payload = Buffer.from(parts[1]!, "base64url").toString("utf-8");
+    return JSON.parse(payload) as Record<string, unknown>;
   } catch {
-    return null;
+    return {};
   }
 }
 
-let cachedOpenClawCommand: string | null = null;
-
-export async function resolveOpenClawCommandAsync(): Promise<string> {
-  if (cachedOpenClawCommand) {
-    return cachedOpenClawCommand;
-  }
-  try {
-    const locator = process.platform === "win32" ? "where" : "which";
-    const args = process.platform === "win32" ? ["openclaw"] : ["-a", "openclaw"];
-    const { stdout } = await execFile(locator, args, { encoding: "utf-8" });
-    const candidates = stdout.trim().split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    if (candidates.length === 0) {
-      throw new Error("openclaw command not found");
-    }
-    const versioned = await Promise.all(
-      candidates.map(async (candidate) => ({ path: candidate, version: await readCommandVersionAsync(candidate) })),
-    );
-    const resolved = versioned.sort((a, b) => compareVersions(b.version, a.version))[0]?.path ?? candidates[0]!;
-    cachedOpenClawCommand = resolved;
-    return resolved;
-  } catch {
-    throw new Error("OpenClaw CLI was not found on PATH.");
-  }
-}
-
-export function resolveOpenClawCommandOrThrow(): string {
-  if (cachedOpenClawCommand) {
-    return cachedOpenClawCommand;
-  }
-  try {
-    const locator = process.platform === "win32" ? "where" : "which";
-    const args = process.platform === "win32" ? ["openclaw"] : ["-a", "openclaw"];
-    const output = execFileSync(locator, args, { encoding: "utf-8" }).trim();
-    const candidates = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    if (candidates.length === 0) {
-      throw new Error("openclaw command not found");
-    }
-    const resolved = candidates[0]!;
-    cachedOpenClawCommand = resolved;
-    return resolved;
-  } catch {
-    throw new Error("OpenClaw CLI was not found on PATH.");
-  }
-}
-
-function buildOpenClawEnv(): NodeJS.ProcessEnv {
-  const stateDir = resolveOpenClawStateDir();
+function extractOpenAiIdentity(accessToken: string): {
+  accountId: string | null;
+  email: string | null;
+  displayName: string | null;
+} {
+  const payload = parseJwtPayload(accessToken);
+  const authClaim = payload["https://api.openai.com/auth"] as Record<string, unknown> | undefined;
   return {
-    ...process.env,
-    OPENCLAW_CONFIG_PATH: join(stateDir, "openclaw.json"),
-    OPENCLAW_HOME: dirname(stateDir),
-    OPENCLAW_PROFILE: "dench",
-    OPENCLAW_STATE_DIR: stateDir,
+    accountId: (authClaim?.chatgpt_account_id as string) ?? null,
+    email: (payload.email as string) ?? null,
+    displayName: (payload.name as string) ?? null,
   };
 }
 
-function firstNonEmptyLine(value: string): string | null {
-  return value.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? null;
+// ── Token exchange ──────────────────────────────────────────────────────────
+
+async function exchangeCodeForTokens(code: string, codeVerifier: string): Promise<{
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+}> {
+  const body = new URLSearchParams({
+    grant_type: "authorization_code",
+    client_id: OPENAI_CLIENT_ID,
+    code,
+    redirect_uri: OPENAI_REDIRECT_URI,
+    code_verifier: codeVerifier,
+  });
+
+  const res = await fetch(OPENAI_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Token exchange failed (${res.status}): ${text}`);
+  }
+
+  return res.json() as Promise<{ access_token: string; refresh_token: string; expires_in: number }>;
 }
+
+// ── Session management ──────────────────────────────────────────────────────
 
 function currentSessionSnapshot(session: StoredSession): ModelAuthLoginSession {
   return {
@@ -323,6 +326,7 @@ function currentSessionSnapshot(session: StoredSession): ModelAuthLoginSession {
     finishedAt: session.finishedAt,
     message: session.message,
     profiles: session.profiles,
+    authUrl: session.authUrl,
   };
 }
 
@@ -332,7 +336,7 @@ export function getLoginSession(sessionId: string): ModelAuthLoginSession | null
   return session ? currentSessionSnapshot(session) : null;
 }
 
-export async function startOpenAiCodexLoginSession(): Promise<ModelAuthLoginSession> {
+export function startOpenAiCodexLoginSession(): ModelAuthLoginSession {
   cleanExpiredSessions();
   const existing = [...sessions().values()].find(
     (session) => session.provider === OPENAI_CODEX_PROVIDER && session.status === "running",
@@ -341,83 +345,114 @@ export async function startOpenAiCodexLoginSession(): Promise<ModelAuthLoginSess
     return currentSessionSnapshot(existing);
   }
 
-  const command = await resolveOpenClawCommandAsync();
-  const env = buildOpenClawEnv();
   const id = crypto.randomUUID();
-  const before = listProviderProfiles(OPENAI_CODEX_PROVIDER).map((profile) => profile.id);
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = computeCodeChallenge(codeVerifier);
+  const oauthState = randomBytes(16).toString("hex");
+  const authUrl = buildAuthorizationUrl(codeChallenge, oauthState);
 
   const session: StoredSession = {
     id,
     provider: OPENAI_CODEX_PROVIDER,
     status: "running",
-    output: "",
+    output: `Open the link below to sign in with your OpenAI account.\n\nAfter signing in, your browser will redirect to a page that cannot be reached (localhost). This is expected.\nCopy the full URL from your browser's address bar and paste it below.\n`,
     startedAt: Date.now(),
     finishedAt: null,
     message: null,
     profiles: listProviderProfiles(OPENAI_CODEX_PROVIDER),
+    authUrl,
+    codeVerifier,
+    oauthState,
   };
 
-  const loginArgs = ["models", "auth", "login", "--provider", OPENAI_CODEX_PROVIDER];
-  const ttyCommand = process.platform === "darwin"
-    ? {
-        command: "/usr/bin/script",
-        args: ["-q", "/dev/null", command, ...loginArgs],
-      }
-    : {
-        // On Linux, use `script` to allocate a pseudo-terminal so the CLI
-        // flushes its output immediately instead of block-buffering it.
-        command: "/usr/bin/script",
-        args: ["-qfc", [command, ...loginArgs].join(" "), "/dev/null"],
-      };
-
-  const child = spawn(ttyCommand.command, ttyCommand.args, {
-    cwd: process.cwd(),
-    env: Object.fromEntries(Object.entries(env).filter(([, value]) => value !== undefined)) as NodeJS.ProcessEnv,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-
-  session.process = child;
   sessions().set(id, session);
-
-  const appendOutput = (data: string) => {
-    session.output = (session.output + data).slice(-24_000);
-  };
-
-  child.stdout.on("data", (chunk: Buffer | string) => {
-    appendOutput(typeof chunk === "string" ? chunk : chunk.toString("utf-8"));
-  });
-  child.stderr.on("data", (chunk: Buffer | string) => {
-    appendOutput(typeof chunk === "string" ? chunk : chunk.toString("utf-8"));
-  });
-  child.on("error", (error) => {
-    session.finishedAt = Date.now();
-    session.process = undefined;
-    session.status = "failed";
-    session.message = error.message;
-    appendOutput(`\n${error.message}\n`);
-  });
-  child.on("exit", () => {
-    session.finishedAt = Date.now();
-    session.process = undefined;
-    if (listProviderProfiles(OPENAI_CODEX_PROVIDER).length >= before.length) {
-      ensurePrimaryModel();
-      const after = listProviderProfiles(OPENAI_CODEX_PROVIDER);
-      const added = after.filter((profile) => !before.includes(profile.id));
-      const nextCurrentId = added[0]?.id ?? after.find((profile) => profile.isCurrent)?.id ?? after[0]?.id ?? null;
-      if (nextCurrentId) {
-        setSelectedProfile(OPENAI_CODEX_PROVIDER, nextCurrentId);
-      }
-      session.status = "completed";
-      session.profiles = listProviderProfiles(OPENAI_CODEX_PROVIDER);
-      session.message = firstNonEmptyLine(session.output) ?? "OpenAI account connected.";
-      return;
-    }
-    session.status = "failed";
-    session.profiles = listProviderProfiles(OPENAI_CODEX_PROVIDER);
-    session.message = firstNonEmptyLine(session.output) ?? "OpenClaw login failed.";
-  });
-
   return currentSessionSnapshot(session);
+}
+
+export async function submitOAuthCallback(
+  sessionId: string,
+  callbackUrl: string,
+): Promise<ModelAuthLoginSession> {
+  const session = sessions().get(sessionId);
+  if (!session) {
+    throw new Error("Login session not found.");
+  }
+  if (session.status !== "running") {
+    throw new Error("Login session is not active.");
+  }
+  if (!session.codeVerifier || !session.oauthState) {
+    throw new Error("Session is missing OAuth state.");
+  }
+
+  // Extract code and state from the callback URL
+  let url: URL;
+  try {
+    url = new URL(callbackUrl);
+  } catch {
+    throw new Error("Invalid callback URL.");
+  }
+
+  const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+
+  if (!code) {
+    throw new Error("Authorization code not found in the callback URL.");
+  }
+  if (state !== session.oauthState) {
+    throw new Error("OAuth state mismatch — please start a new login session.");
+  }
+
+  try {
+    // Exchange code for tokens
+    const tokens = await exchangeCodeForTokens(code, session.codeVerifier);
+    const identity = extractOpenAiIdentity(tokens.access_token);
+
+    // Build profile ID
+    const profileId = `${OPENAI_CODEX_PROVIDER}:${identity.accountId ?? "default"}`;
+
+    // Save to auth-profiles.json
+    const raw = readAuthProfilesFile();
+    const nextProfiles = { ...(raw.profiles ?? {}) };
+    nextProfiles[profileId] = {
+      type: "oauth",
+      provider: OPENAI_CODEX_PROVIDER,
+      accountId: identity.accountId ?? undefined,
+      email: identity.email ?? undefined,
+      displayName: identity.displayName ?? undefined,
+      refresh: tokens.refresh_token,
+      access: tokens.access_token,
+      expires: Date.now() + tokens.expires_in * 1000,
+    };
+
+    let next: AuthProfilesFile = { ...raw, profiles: nextProfiles };
+    next = writeCurrentProfileId(next, OPENAI_CODEX_PROVIDER, profileId);
+    writeJsonFile(resolveAuthProfilesPath(), next);
+
+    ensurePrimaryModel();
+
+    // Update session
+    session.status = "completed";
+    session.finishedAt = Date.now();
+    session.profiles = listProviderProfiles(OPENAI_CODEX_PROVIDER);
+    session.message = `OpenAI account connected${identity.email ? ` (${identity.email})` : ""}.`;
+    session.output += `\nSuccess! ${session.message}\n`;
+    session.authUrl = undefined;
+    session.codeVerifier = undefined;
+    session.oauthState = undefined;
+
+    return currentSessionSnapshot(session);
+  } catch (error) {
+    session.status = "failed";
+    session.finishedAt = Date.now();
+    session.profiles = listProviderProfiles(OPENAI_CODEX_PROVIDER);
+    session.message = error instanceof Error ? error.message : "Token exchange failed.";
+    session.output += `\nError: ${session.message}\n`;
+    session.authUrl = undefined;
+    session.codeVerifier = undefined;
+    session.oauthState = undefined;
+
+    return currentSessionSnapshot(session);
+  }
 }
 
 export function getModelAuthSummary() {

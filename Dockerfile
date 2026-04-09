@@ -52,11 +52,9 @@ RUN test -f /app/apps/control-api/dist/index.mjs -o -f /app/apps/control-api/dis
 # ── Stage 2: Production runner ───────────────────────────────────────────────
 FROM node:22-slim AS runner
 
-# node-pty runtime deps + util-linux provides `script` (used to allocate a PTY
-# for the openclaw CLI so its output is line-buffered and flushed immediately)
+# node-pty runtime deps
 RUN apt-get update && apt-get install -y \
     libstdc++6 \
-    util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
