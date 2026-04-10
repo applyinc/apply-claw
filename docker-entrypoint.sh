@@ -7,38 +7,25 @@ set -e
 
 GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
 PROFILE="${OPENCLAW_PROFILE:-dench}"
-STATE_DIR="${OPENCLAW_STATE_DIR:-/data}"
-CONFIG_DIR="${STATE_DIR}/config"
-GATEWAY_CONFIG="${CONFIG_DIR}/openclaw.json"
 
-# ── Write gateway config (disable device auth for localhost-only gateway) ────
-if [ ! -f "$GATEWAY_CONFIG" ]; then
-  echo "[entrypoint] Writing gateway config..."
-  mkdir -p "$CONFIG_DIR"
-  cat > "$GATEWAY_CONFIG" <<'CONFIGEOF'
-{
-  "gateway": {
-    "controlUi": {
-      "dangerouslyDisableDeviceAuth": true
-    }
-  }
-}
-CONFIGEOF
-fi
+# ── Generate an internal shared token for gateway ↔ control-api auth ────────
+# This token is only used inside the container (loopback). It allows the
+# control-api to authenticate as an operator without device identity.
+INTERNAL_TOKEN="$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
 
-export OPENCLAW_CONFIG_PATH="$GATEWAY_CONFIG"
+export OPENCLAW_GATEWAY_TOKEN="$INTERNAL_TOKEN"
 
 # ── Start gateway ────────────────────────────────────────────────────────────
 echo "[entrypoint] Starting OpenClaw gateway on port ${GATEWAY_PORT}..."
 
 # Run the gateway in the background.
 # --allow-unconfigured: skip the gateway.mode=local config requirement
-# --auth none: auth is handled by control-api, gateway is localhost only
+# --auth token: shared-token auth so control-api can connect without device identity
 # --bind loopback: listen only on 127.0.0.1
 openclaw --profile "$PROFILE" gateway run \
   --port "$GATEWAY_PORT" \
   --allow-unconfigured \
-  --auth none \
+  --auth token \
   --bind loopback &
 
 GATEWAY_PID=$!
