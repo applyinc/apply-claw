@@ -1763,10 +1763,17 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 							}),
 						});
 						pendingHtmlRef.current = null;
-						if (res.ok && res.body && sid) {
+						if (!res.ok) {
+							const errText = await res.text().catch(() => `HTTP ${res.status}`);
+							setStreamError(`Chat request failed: ${errText}`);
+						} else if (!sid) {
+							setStreamError("Chat request failed: no session ID");
+						} else if (res.body) {
 							await attemptReconnect(sid, [userMsg]);
 						}
-					} catch { /* ignore */ }
+					} catch (err) {
+						setStreamError(`Chat request failed: ${err instanceof Error ? err.message : String(err)}`);
+					}
 				}
 
 				setTimeout(() => {
