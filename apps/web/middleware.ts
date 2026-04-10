@@ -1,6 +1,10 @@
-import { auth } from "@/lib/auth/server";
+import { type NextRequest, NextResponse } from "next/server";
+import { getAuth } from "@/lib/auth/server";
 
-export default auth.middleware({ loginUrl: "/auth/sign-in" });
+export default async function middleware(request: NextRequest) {
+  const authMiddleware = getAuth().middleware({ loginUrl: "/auth/sign-in" });
+  return authMiddleware(request);
+}
 
 export const config = {
   matcher: [
