@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@neondatabase/auth/ui/tailwind";
 @import "@sinm/react-chrome-tabs/css/chrome-tabs.css";
 @import "@sinm/react-chrome-tabs/css/chrome-tabs-dark-theme.css";
 
