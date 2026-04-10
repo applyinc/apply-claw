@@ -130,7 +130,8 @@ openclaw --profile "$PROFILE" gateway run \
   --port "$GATEWAY_PORT" \
   --allow-unconfigured \
   --auth token \
-  --bind loopback &
+  --bind loopback \
+  --verbose &
 
 GATEWAY_PID=$!
 sleep 2
