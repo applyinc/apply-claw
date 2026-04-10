@@ -16,6 +16,6 @@ export const config = {
      * - auth routes (sign-in, sign-up, etc.)
      * - api/auth routes (auth API handler)
      */
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.png$|auth/|api/auth/).*)",
+    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.png$|auth/|api/auth/|api/model-auth/).*)",
   ],
 };
