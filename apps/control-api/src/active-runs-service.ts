@@ -790,7 +790,13 @@ function wireSubscribeOnlyProcess(run: ActiveRun, child: AgentProcessHandle, ses
     });
   });
 
-  child.on("error", (err) => { console.error("[active-runs] Subscribe child error:", err); });
+  child.on("error", (err) => {
+    console.error("[active-runs] Subscribe child error:", err);
+    if (run.status !== "running") return;
+    const message = err instanceof Error ? err.message : String(err);
+    emitError(`Failed to connect to agent: ${message}`);
+    finalizeSubscribeRun(run, "error");
+  });
   child.stderr?.on("data", (chunk: Buffer) => { console.error("[active-runs subscribe stderr]", chunk.toString()); });
   run._subscribeProcess = child;
 }

@@ -1741,7 +1741,32 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 						}
 					} catch { /* ignore */ }
 				} else {
-					void sendMessage({ text: messageText });
+					// Fire the POST to /api/chat to start the agent run, then
+					// use attemptReconnect (which understands the custom SSE
+					// format) to stream the response into the UI.
+					const sid = sessionIdRef.current;
+					const userMsg = {
+						id: `user-${Date.now()}`,
+						role: "user" as const,
+						parts: [{ type: "text" as const, text: messageText }] as UIMessage["parts"],
+					};
+					setMessages((prev) => [...prev, userMsg]);
+
+					try {
+						const res = await fetch("/api/chat", {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({
+								messages: [{ role: "user", parts: [{ type: "text", text: messageText }] }],
+								sessionId: sid,
+								userHtml: pendingHtmlRef.current ?? undefined,
+							}),
+						});
+						pendingHtmlRef.current = null;
+						if (res.ok && res.body && sid) {
+							await attemptReconnect(sid, [userMsg]);
+						}
+					} catch { /* ignore */ }
 				}
 
 				setTimeout(() => {
