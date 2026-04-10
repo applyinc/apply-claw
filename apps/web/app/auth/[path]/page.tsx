@@ -3,11 +3,10 @@
 import { AuthView } from "@neondatabase/auth/react/ui";
 import { NeonAuthUIProvider } from "@neondatabase/auth/react/ui";
 import { authClient } from "@/lib/auth/client";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 
 export default function AuthPage() {
   const params = useParams<{ path: string }>();
-  const router = useRouter();
 
   return (
     <NeonAuthUIProvider authClient={authClient}>
@@ -23,9 +22,7 @@ export default function AuthPage() {
           </div>
           <AuthView
             pathname={`/auth/${params.path}`}
-            onSessionChange={() => {
-              router.push("/");
-            }}
+            redirectTo="/"
           />
         </div>
       </div>
