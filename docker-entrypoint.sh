@@ -131,6 +131,7 @@ openclaw --profile "$PROFILE" gateway run \
   --allow-unconfigured \
   --auth token \
   --bind loopback \
+  --dev \
   --verbose &
 
 GATEWAY_PID=$!
