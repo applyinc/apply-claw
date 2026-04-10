@@ -10,61 +10,109 @@ PROFILE="${OPENCLAW_PROFILE:-dench}"
 STATE_DIR="${OPENCLAW_STATE_DIR:-/data}"
 IDENTITY_DIR="${STATE_DIR}/identity"
 DEVICE_FILE="${IDENTITY_DIR}/device.json"
+DEVICES_DIR="${STATE_DIR}/devices"
+PAIRED_FILE="${DEVICES_DIR}/paired.json"
 
-# ── Generate device identity if missing ──────────────────────────────────────
-# The gateway requires a device identity (Ed25519 keypair) for operator scopes.
-# On localhost, the gateway auto-pairs unknown devices silently.
-# deviceId must be sha256(raw-public-key). Regenerate if file uses old UUID format.
+# ── Generate device identity + pre-pair if missing ───────────────────────────
+# The gateway requires a device identity (Ed25519 keypair) AND that the device
+# is paired (registered in devices/paired.json) to grant operator scopes.
+# Locally the CLI bootstrap does this interactively; in Docker we do it
+# at container start by writing both files before the gateway starts.
+#
+# deviceId = sha256(raw-public-key) — the gateway derives it the same way.
+
+# Regenerate if existing device.json uses the old UUID format
 if [ -f "$DEVICE_FILE" ]; then
   OLD_ID="$(node -e "try{const d=JSON.parse(require('fs').readFileSync('${DEVICE_FILE}','utf8'));process.stdout.write(/^[0-9a-f]{64}$/.test(d.deviceId)?'ok':'bad')}catch{process.stdout.write('bad')}")"
   if [ "$OLD_ID" != "ok" ]; then
-    echo "[entrypoint] Regenerating device identity (old format detected)..."
-    rm -f "$DEVICE_FILE"
+    echo "[entrypoint] Regenerating device identity (old format)..."
+    rm -f "$DEVICE_FILE" "$PAIRED_FILE"
   fi
 fi
+
 if [ ! -f "$DEVICE_FILE" ]; then
-  echo "[entrypoint] Generating device identity..."
-  mkdir -p "$IDENTITY_DIR"
+  echo "[entrypoint] Generating device identity + pairing data..."
+  mkdir -p "$IDENTITY_DIR" "$DEVICES_DIR"
   node -e "
     const crypto = require('crypto');
     const fs = require('fs');
-    const { generateKeyPairSync, createPublicKey, createHash } = crypto;
+    const { generateKeyPairSync, createPublicKey, createHash, randomBytes } = crypto;
+
+    // Generate Ed25519 keypair
     const { publicKey, privateKey } = generateKeyPairSync('ed25519', {
       publicKeyEncoding:  { type: 'spki',  format: 'pem' },
       privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     });
-    // deviceId must be SHA256(raw-public-key) — the gateway derives it the
-    // same way and rejects mismatches.
+
+    // Derive deviceId = SHA256(raw public key)
     const spki = createPublicKey(publicKey).export({ type: 'spki', format: 'der' });
-    // SPKI DER for Ed25519 = 12-byte ASN.1 header + 32-byte raw key
     const prefix = Buffer.from('302a300506032b6570032100', 'hex');
     const rawKey = spki.subarray(prefix.length);
     const deviceId = createHash('sha256').update(rawKey).digest('hex');
-    const identity = {
-      deviceId,
-      publicKeyPem: publicKey,
-      privateKeyPem: privateKey,
-    };
+
+    // base64url-encode the raw public key (what the gateway stores)
+    const pubKeyB64 = rawKey.toString('base64url');
+
+    // 1) Write identity file (read by control-api)
+    const identity = { deviceId, publicKeyPem: publicKey, privateKeyPem: privateKey };
     fs.writeFileSync('${DEVICE_FILE}', JSON.stringify(identity, null, 2) + '\n');
-    console.log('[entrypoint] Device identity created: ' + deviceId);
+
+    // 2) Write paired.json (read by gateway on startup)
+    const now = Date.now();
+    const scopes = [
+      'operator.admin', 'operator.approvals', 'operator.pairing',
+      'operator.read', 'operator.write'
+    ];
+    const deviceToken = randomBytes(32).toString('hex');
+    const paired = {
+      [deviceId]: {
+        deviceId,
+        publicKey: pubKeyB64,
+        displayName: 'docker-internal',
+        platform: 'linux',
+        clientId: 'gateway-client',
+        clientMode: 'backend',
+        role: 'operator',
+        roles: ['operator'],
+        scopes,
+        approvedScopes: scopes,
+        tokens: {
+          operator: {
+            token: deviceToken,
+            role: 'operator',
+            scopes,
+            createdAtMs: now,
+          }
+        },
+        createdAtMs: now,
+        approvedAtMs: now,
+      }
+    };
+    fs.writeFileSync('${PAIRED_FILE}', JSON.stringify(paired, null, 2) + '\n');
+
+    // 3) Write device-auth.json (read by control-api for deviceToken)
+    const deviceAuth = {
+      deviceId,
+      tokens: {
+        operator: {
+          token: deviceToken,
+          scopes,
+        }
+      }
+    };
+    fs.writeFileSync('${IDENTITY_DIR}/device-auth.json', JSON.stringify(deviceAuth, null, 2) + '\n');
+
+    console.log('[entrypoint] Device identity + pairing created: ' + deviceId);
   "
 fi
 
 # ── Generate an internal shared token for gateway ↔ control-api auth ────────
-# Token auth ensures sharedAuthOk=true so the gateway allows the connection
-# even before the device is paired. The device identity + localhost then
-# triggers silent auto-pairing, granting full operator scopes.
 INTERNAL_TOKEN="$(node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))")"
-
 export OPENCLAW_GATEWAY_TOKEN="$INTERNAL_TOKEN"
 
 # ── Start gateway ────────────────────────────────────────────────────────────
 echo "[entrypoint] Starting OpenClaw gateway on port ${GATEWAY_PORT}..."
 
-# Run the gateway in the background.
-# --allow-unconfigured: skip the gateway.mode=local config requirement
-# --auth token: shared-token auth so control-api can connect as operator
-# --bind loopback: listen only on 127.0.0.1
 openclaw --profile "$PROFILE" gateway run \
   --port "$GATEWAY_PORT" \
   --allow-unconfigured \
@@ -72,8 +120,6 @@ openclaw --profile "$PROFILE" gateway run \
   --bind loopback &
 
 GATEWAY_PID=$!
-
-# Give the gateway a moment to start
 sleep 2
 
 echo "[entrypoint] Gateway started (PID ${GATEWAY_PID}). Starting control-api..."
