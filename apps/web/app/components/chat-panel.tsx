@@ -1741,9 +1741,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 						}
 					} catch { /* ignore */ }
 				} else {
-					// Fire the POST to /api/chat to start the agent run, then
-					// use attemptReconnect (which understands the custom SSE
-					// format) to stream the response into the UI.
+					// POST to /api/chat and read the custom SSE response
+					// directly (the AI SDK can't parse this format).
 					const sid = sessionIdRef.current;
 					const userMsg = {
 						id: `user-${Date.now()}`,
@@ -1753,7 +1752,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 					setMessages((prev) => [...prev, userMsg]);
 
 					try {
-						const res = await fetch("/api/chat", {
+						const chatRes = await fetch("/api/chat", {
 							method: "POST",
 							headers: { "Content-Type": "application/json" },
 							body: JSON.stringify({
@@ -1763,13 +1762,52 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 							}),
 						});
 						pendingHtmlRef.current = null;
-						if (!res.ok) {
-							const errText = await res.text().catch(() => `HTTP ${res.status}`);
+						if (!chatRes.ok) {
+							const errText = await chatRes.text().catch(() => `HTTP ${chatRes.status}`);
 							setStreamError(`Chat request failed: ${errText}`);
-						} else if (!sid) {
-							setStreamError("Chat request failed: no session ID");
-						} else if (res.body) {
-							await attemptReconnect(sid, [userMsg]);
+						} else if (chatRes.body) {
+							// Read the SSE stream directly from the POST response
+							const parser = createStreamParser();
+							const reader = chatRes.body.getReader();
+							const decoder = new TextDecoder();
+							const assistantMsgId = `assistant-${sid}-${Date.now()}`;
+							let sseBuffer = "";
+							let sseFrameRequested = false;
+
+							const updateChatUI = () => {
+								const assistantMsg = {
+									id: assistantMsgId,
+									role: "assistant" as const,
+									parts: parser.getParts() as UIMessage["parts"],
+								};
+								setMessages([userMsg, assistantMsg]);
+							};
+
+							// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+							while (true) {
+								const { done, value } = await reader.read();
+								if (done) break;
+								sseBuffer += decoder.decode(value, { stream: true });
+								let sepIdx;
+								while ((sepIdx = sseBuffer.indexOf("\n\n")) !== -1) {
+									const chunk = sseBuffer.slice(0, sepIdx);
+									sseBuffer = sseBuffer.slice(sepIdx + 2);
+									if (chunk.startsWith("data: ")) {
+										try {
+											parser.processEvent(JSON.parse(chunk.slice(6)));
+										} catch { /* skip malformed */ }
+									}
+								}
+								if (!sseFrameRequested) {
+									sseFrameRequested = true;
+									requestAnimationFrame(() => {
+										sseFrameRequested = false;
+										updateChatUI();
+									});
+								}
+							}
+							updateChatUI();
+							if (sid) savedMessageIdsRef.current.add(assistantMsgId);
 						}
 					} catch (err) {
 						setStreamError(`Chat request failed: ${err instanceof Error ? err.message : String(err)}`);
