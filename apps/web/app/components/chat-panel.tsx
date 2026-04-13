@@ -1758,15 +1758,19 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 						const chatRes = await fetch("/api/chat", {
 							method: "POST",
 							headers: { "Content-Type": "application/json" },
+							redirect: "manual",
 							body: JSON.stringify({
 								messages: [{ role: "user", parts: [{ type: "text", text: messageText }] }],
 								sessionId: sid,
 								userHtml: pendingHtmlRef.current ?? undefined,
 							}),
 						});
-						console.log("[chat-panel] POST /api/chat response: status=", chatRes.status, "ok=", chatRes.ok, "hasBody=", !!chatRes.body);
+						console.log("[chat-panel] POST /api/chat response: status=", chatRes.status, "ok=", chatRes.ok, "type=", chatRes.type, "hasBody=", !!chatRes.body);
 						pendingHtmlRef.current = null;
-						if (!chatRes.ok) {
+						if (chatRes.type === "opaqueredirect" || chatRes.status === 401) {
+							console.error("[chat-panel] POST /api/chat auth failed: type=", chatRes.type, "status=", chatRes.status);
+							setStreamError("Session expired. Please reload the page and sign in again.");
+						} else if (!chatRes.ok) {
 							const errText = await chatRes.text().catch(() => `HTTP ${chatRes.status}`);
 							console.error("[chat-panel] POST /api/chat error:", errText);
 							setStreamError(`Chat request failed: ${errText}`);
@@ -2011,13 +2015,17 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 						const chatRes = await fetch("/api/chat", {
 							method: "POST",
 							headers: { "Content-Type": "application/json" },
+							redirect: "manual",
 							body: JSON.stringify({
 								messages: [{ role: "user", parts: [{ type: "text", text }] }],
 								sessionId,
 							}),
 						});
-						console.log("[chat-panel] sendNewMessage: POST /api/chat response: status=", chatRes.status, "ok=", chatRes.ok, "hasBody=", !!chatRes.body);
-						if (!chatRes.ok) {
+						console.log("[chat-panel] sendNewMessage: POST /api/chat response: status=", chatRes.status, "ok=", chatRes.ok, "type=", chatRes.type, "hasBody=", !!chatRes.body);
+						if (chatRes.type === "opaqueredirect" || chatRes.status === 401) {
+							console.error("[chat-panel] sendNewMessage: POST /api/chat auth failed: type=", chatRes.type, "status=", chatRes.status);
+							setStreamError("Session expired. Please reload the page and sign in again.");
+						} else if (!chatRes.ok) {
 							const errText = await chatRes.text().catch(() => `HTTP ${chatRes.status}`);
 							console.error("[chat-panel] sendNewMessage: POST /api/chat error:", errText);
 							setStreamError(`Chat request failed: ${errText}`);
