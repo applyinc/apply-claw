@@ -8,6 +8,18 @@ function resolveControlApiAuthToken(): string | null {
   return process.env.CONTROL_API_AUTH_TOKEN?.trim() || null;
 }
 
+/**
+ * Build a synthetic JSON error Response when the control API is unreachable.
+ * This prevents Next.js from returning an HTML error page that callers
+ * (expecting JSON) cannot parse.
+ */
+function controlApiUnavailableResponse(): Response {
+  return Response.json(
+    { error: "Control API is not reachable." },
+    { status: 502, headers: { "Content-Type": "application/json" } },
+  );
+}
+
 export async function fetchControlApi(
   path: string,
   init?: RequestInit,
@@ -19,10 +31,14 @@ export async function fetchControlApi(
     headers.set("Authorization", `Bearer ${authToken}`);
   }
 
-  return fetch(`${resolveControlApiBaseUrl()}${path}`, {
-    ...init,
-    headers,
-  });
+  try {
+    return await fetch(`${resolveControlApiBaseUrl()}${path}`, {
+      ...init,
+      headers,
+    });
+  } catch {
+    return controlApiUnavailableResponse();
+  }
 }
 
 /**
@@ -34,6 +50,12 @@ export async function proxyControlApiStream(
   init?: RequestInit,
 ): Promise<Response> {
   const upstream = await fetchControlApi(path, init);
+
+  // If the upstream is a synthetic error (e.g. 502 from connection failure),
+  // return it directly so the caller gets a proper JSON error.
+  if (upstream.status === 502) {
+    return upstream;
+  }
 
   const headers = new Headers();
   for (const headerName of ["Content-Type", "Cache-Control", "Connection", "X-Run-Active"]) {
@@ -52,6 +74,12 @@ export async function proxyControlApiResponse(
   init?: RequestInit,
 ): Promise<Response> {
   const upstream = await fetchControlApi(path, init);
+
+  // If the upstream is a synthetic error, return it directly.
+  if (upstream.status === 502) {
+    return upstream;
+  }
+
   const body = await upstream.arrayBuffer();
   const headers = new Headers();
 
