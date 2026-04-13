@@ -1050,15 +1050,18 @@ export function createControlApiApp() {
       });
       const sessionMeta = getSessionMeta(sessionId);
       const effectiveAgentId = sessionMeta?.workspaceAgentId ?? resolveActiveAgentId();
+      console.log(`[POST /chat] startRun sessionId=${sessionId} agentId=${effectiveAgentId}`);
       try {
         startRun({ sessionId, message: agentMessage, agentSessionId: sessionId, overrideAgentId: effectiveAgentId });
       } catch (err) {
+        console.error(`[POST /chat] startRun threw:`, err);
         return c.text(err instanceof Error ? err.message : String(err), 500);
       }
     }
 
     if (!runKey) return c.text("No session key", 400);
     const stream = createSseStream(runKey, { replay: false, normalize: true });
+    console.log(`[POST /chat] SSE stream created for runKey=${runKey}, stream=${!!stream}`);
     if (!stream) return c.text("No active run", 404);
     return sseResponse(stream);
   });

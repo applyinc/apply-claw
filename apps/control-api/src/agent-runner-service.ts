@@ -366,6 +366,7 @@ class GatewayProcessHandle extends EventEmitter implements AgentProcessHandle {
 
   private async reconnectAfterDrop(): Promise<void> {
     if (this.finished || this.requestedClose) return;
+    console.log(`[GatewayProcessHandle] reconnectAfterDrop attempt=${this.reconnectAttempt}`);
     try {
       await this.openAndAuthenticate();
       const mode = this.retryMode();
@@ -374,6 +375,7 @@ class GatewayProcessHandle extends EventEmitter implements AgentProcessHandle {
       this.resetReconnectState();
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
+      console.error(`[GatewayProcessHandle] reconnect FAILED: ${raw}`);
       if (this.scheduleReconnect(raw)) return;
       const enhanced = enhanceScopeError(raw);
       const err = new Error(enhanced ?? raw);
@@ -384,16 +386,29 @@ class GatewayProcessHandle extends EventEmitter implements AgentProcessHandle {
   }
 
   private async start(): Promise<void> {
+    console.log(`[GatewayProcessHandle] start() mode=${this.params.mode} sessionKey=${this.params.sessionKey ?? "none"}`);
     try {
+      console.log("[GatewayProcessHandle] openAndAuthenticate...");
       await this.openAndAuthenticate();
-      if (this.params.mode === "start") await this.beginStartMode();
-      else await this.beginSubscribeMode(this.params.afterSeq);
+      console.log("[GatewayProcessHandle] openAndAuthenticate OK");
+      if (this.params.mode === "start") {
+        console.log("[GatewayProcessHandle] beginStartMode...");
+        await this.beginStartMode();
+        console.log("[GatewayProcessHandle] beginStartMode OK, runId=", this.runId);
+      } else {
+        await this.beginSubscribeMode(this.params.afterSeq);
+      }
       this.resetReconnectState();
     } catch (error) {
       const raw = error instanceof Error ? error.message : String(error);
-      if (this.scheduleReconnect(raw)) return;
+      console.error(`[GatewayProcessHandle] start() FAILED: ${raw}`);
+      if (this.scheduleReconnect(raw)) {
+        console.log(`[GatewayProcessHandle] scheduled reconnect attempt=${this.reconnectAttempt}`);
+        return;
+      }
       const enhanced = enhanceScopeError(raw);
       const err = new Error(enhanced ?? raw);
+      console.error(`[GatewayProcessHandle] FATAL error (no more retries): ${err.message}`);
       (this.stderr as PassThrough).write(`${err.message}\n`);
       this.emit("error", err);
       this.finish(1, null);
@@ -565,6 +580,7 @@ class GatewayProcessHandle extends EventEmitter implements AgentProcessHandle {
   }
 
   private handleSocketClose(code: number, reason: string): void {
+    console.log(`[GatewayProcessHandle] handleSocketClose code=${code} reason="${reason}" finished=${this.finished}`);
     if (this.finished) return;
     this.client = null;
     if (this.closeScheduled) {
@@ -573,7 +589,10 @@ class GatewayProcessHandle extends EventEmitter implements AgentProcessHandle {
       return;
     }
     const detail = reason.trim() || `code ${code}`;
-    if (this.scheduleReconnect(detail, code)) return;
+    if (this.scheduleReconnect(detail, code)) {
+      console.log(`[GatewayProcessHandle] socket close → scheduled reconnect attempt=${this.reconnectAttempt}`);
+      return;
+    }
     if (!this.requestedClose) {
       (this.stderr as PassThrough).write(`Gateway connection closed: ${detail}\n`);
     }
