@@ -1827,7 +1827,6 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 				onSessionsChange,
 				filePath,
 				fileContext,
-				sendMessage,
 				gatewaySessionKey,
 				attemptReconnect,
 				onConversationActivity,
@@ -1992,13 +1991,80 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 					onActiveSessionChange?.(sessionId);
 					onSessionsChange?.();
 					userScrolledAwayRef.current = false;
-					void sendMessage({ text });
+
+					// Direct fetch + SSE reading (AI SDK can't parse the
+					// control-API's custom SSE format, so we bypass it).
+					const userMsg = {
+						id: `user-${Date.now()}`,
+						role: "user" as const,
+						parts: [{ type: "text" as const, text }] as UIMessage["parts"],
+					};
+					setMessages((prev) => [...prev, userMsg]);
+
+					try {
+						const chatRes = await fetch("/api/chat", {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({
+								messages: [{ role: "user", parts: [{ type: "text", text }] }],
+								sessionId,
+							}),
+						});
+						if (!chatRes.ok) {
+							const errText = await chatRes.text().catch(() => `HTTP ${chatRes.status}`);
+							setStreamError(`Chat request failed: ${errText}`);
+						} else if (chatRes.body) {
+							const parser = createStreamParser();
+							const reader = chatRes.body.getReader();
+							const decoder = new TextDecoder();
+							const assistantMsgId = `assistant-${sessionId}-${Date.now()}`;
+							let sseBuffer = "";
+							let sseFrameRequested = false;
+
+							const updateChatUI = () => {
+								const assistantMsg = {
+									id: assistantMsgId,
+									role: "assistant" as const,
+									parts: parser.getParts() as UIMessage["parts"],
+								};
+								setMessages([userMsg, assistantMsg]);
+							};
+
+							// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+							while (true) {
+								const { done, value } = await reader.read();
+								if (done) break;
+								sseBuffer += decoder.decode(value, { stream: true });
+								let sepIdx;
+								while ((sepIdx = sseBuffer.indexOf("\n\n")) !== -1) {
+									const chunk = sseBuffer.slice(0, sepIdx);
+									sseBuffer = sseBuffer.slice(sepIdx + 2);
+									if (chunk.startsWith("data: ")) {
+										try {
+											parser.processEvent(JSON.parse(chunk.slice(6)));
+										} catch { /* skip malformed */ }
+									}
+								}
+								if (!sseFrameRequested) {
+									sseFrameRequested = true;
+									requestAnimationFrame(() => {
+										sseFrameRequested = false;
+										updateChatUI();
+									});
+								}
+							}
+							updateChatUI();
+							if (sessionId) savedMessageIdsRef.current.add(assistantMsgId);
+						}
+					} catch (err) {
+						setStreamError(`Chat request failed: ${err instanceof Error ? err.message : String(err)}`);
+					}
 				},
 				insertFileMention: (name: string, path: string) => {
 					editorRef.current?.insertFileMention(name, path);
 				},
 			}),
-			[handleSessionSelect, handleNewSession, createSession, onActiveSessionChange, onSessionsChange, onConversationActivity, sendMessage],
+			[handleSessionSelect, handleNewSession, createSession, onActiveSessionChange, onSessionsChange, onConversationActivity, setMessages, setStreamError],
 		);
 
 		// ── Stop handler (aborts server-side run + client-side stream) ──
