@@ -1791,6 +1791,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 							const assistantMsgId = `assistant-${sid}-${Date.now()}`;
 							let sseBuffer = "";
 							let sseFrameRequested = false;
+							let sseEventCount = 0;
 
 							const updateChatUI = () => {
 								const assistantMsg = {
@@ -1801,19 +1802,27 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 								setMessages([userMsg, assistantMsg]);
 							};
 
+							console.log("[chat-panel] handleSend: SSE stream reading started");
 							// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
 							while (true) {
 								const { done, value } = await reader.read();
-								if (done) break;
-								sseBuffer += decoder.decode(value, { stream: true });
+								if (done) { console.log("[chat-panel] handleSend: SSE stream done, total events=", sseEventCount); break; }
+								const rawChunk = decoder.decode(value, { stream: true });
+								sseBuffer += rawChunk;
+								if (sseEventCount === 0 && rawChunk.length > 0) {
+									console.log("[chat-panel] handleSend: SSE first raw chunk:", rawChunk.slice(0, 500));
+								}
 								let sepIdx;
 								while ((sepIdx = sseBuffer.indexOf("\n\n")) !== -1) {
 									const chunk = sseBuffer.slice(0, sepIdx);
 									sseBuffer = sseBuffer.slice(sepIdx + 2);
 									if (chunk.startsWith("data: ")) {
+										sseEventCount++;
 										try {
-											parser.processEvent(JSON.parse(chunk.slice(6)));
-										} catch { /* skip malformed */ }
+											const parsed = JSON.parse(chunk.slice(6));
+											if (sseEventCount <= 5) console.log("[chat-panel] handleSend: SSE event #" + sseEventCount + ":", JSON.stringify(parsed).slice(0, 300));
+											parser.processEvent(parsed);
+										} catch { console.warn("[chat-panel] handleSend: SSE malformed:", chunk.slice(0, 200)); }
 									}
 								}
 								if (!sseFrameRequested) {
@@ -1824,6 +1833,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 									});
 								}
 							}
+							console.log("[chat-panel] handleSend: SSE stream complete, parts=", JSON.stringify(parser.getParts()).slice(0, 300));
 							updateChatUI();
 							if (sid) savedMessageIdsRef.current.add(assistantMsgId);
 						}
@@ -2045,6 +2055,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 							const assistantMsgId = `assistant-${sessionId}-${Date.now()}`;
 							let sseBuffer = "";
 							let sseFrameRequested = false;
+							let sseEventCount = 0;
 
 							const updateChatUI = () => {
 								const assistantMsg = {
@@ -2055,19 +2066,27 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 								setMessages([userMsg, assistantMsg]);
 							};
 
+							console.log("[chat-panel] sendNewMessage: SSE stream reading started");
 							// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
 							while (true) {
 								const { done, value } = await reader.read();
-								if (done) break;
-								sseBuffer += decoder.decode(value, { stream: true });
+								if (done) { console.log("[chat-panel] sendNewMessage: SSE stream done, total events=", sseEventCount); break; }
+								const rawChunk = decoder.decode(value, { stream: true });
+								sseBuffer += rawChunk;
+								if (sseEventCount === 0 && rawChunk.length > 0) {
+									console.log("[chat-panel] sendNewMessage: SSE first raw chunk:", rawChunk.slice(0, 500));
+								}
 								let sepIdx;
 								while ((sepIdx = sseBuffer.indexOf("\n\n")) !== -1) {
 									const chunk = sseBuffer.slice(0, sepIdx);
 									sseBuffer = sseBuffer.slice(sepIdx + 2);
 									if (chunk.startsWith("data: ")) {
+										sseEventCount++;
 										try {
-											parser.processEvent(JSON.parse(chunk.slice(6)));
-										} catch { /* skip malformed */ }
+											const parsed = JSON.parse(chunk.slice(6));
+											if (sseEventCount <= 5) console.log("[chat-panel] sendNewMessage: SSE event #" + sseEventCount + ":", JSON.stringify(parsed).slice(0, 300));
+											parser.processEvent(parsed);
+										} catch { console.warn("[chat-panel] sendNewMessage: SSE malformed:", chunk.slice(0, 200)); }
 									}
 								}
 								if (!sseFrameRequested) {
@@ -2078,6 +2097,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 									});
 								}
 							}
+							console.log("[chat-panel] sendNewMessage: SSE stream complete, parts=", JSON.stringify(parser.getParts()).slice(0, 300));
 							updateChatUI();
 							if (sessionId) savedMessageIdsRef.current.add(assistantMsgId);
 						}
