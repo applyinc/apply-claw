@@ -1071,8 +1071,17 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 				const res = await fetch("/api/web-sessions", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
+					redirect: "manual",
 					body: JSON.stringify(body),
 				});
+				if (!res.ok || res.type === "opaqueredirect") {
+					console.error("[chat-panel] createSession failed: status=", res.status, "type=", res.type);
+					throw new Error(
+						res.status === 401
+							? "Session expired. Please reload the page and sign in again."
+							: `Failed to create session (HTTP ${res.status})`,
+					);
+				}
 				const data = await res.json();
 				return data.session.id;
 			},
