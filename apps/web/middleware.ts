@@ -2,8 +2,18 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getAuth } from "@/lib/auth/server";
 
 export default async function middleware(request: NextRequest) {
+  const { pathname, method } = { pathname: request.nextUrl.pathname, method: request.method };
+  if (pathname.startsWith("/api/chat") || pathname.startsWith("/api/web-sessions")) {
+    console.log(`[middleware] ${method} ${pathname} — entering auth middleware`);
+  }
   const authMiddleware = getAuth().middleware({ loginUrl: "/auth/sign-in" });
-  return authMiddleware(request);
+  const response = await authMiddleware(request);
+  if (pathname.startsWith("/api/chat") || pathname.startsWith("/api/web-sessions")) {
+    const status = response?.status ?? "no-response";
+    const location = response?.headers?.get("location") ?? "";
+    console.log(`[middleware] ${method} ${pathname} — auth result: status=${status} location=${location}`);
+  }
+  return response;
 }
 
 export const config = {

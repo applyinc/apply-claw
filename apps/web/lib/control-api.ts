@@ -31,12 +31,17 @@ export async function fetchControlApi(
     headers.set("Authorization", `Bearer ${authToken}`);
   }
 
+  const url = `${resolveControlApiBaseUrl()}${path}`;
+  console.log(`[control-api] fetchControlApi: ${init?.method ?? "GET"} ${url}`);
   try {
-    return await fetch(`${resolveControlApiBaseUrl()}${path}`, {
+    const res = await fetch(url, {
       ...init,
       headers,
     });
-  } catch {
+    console.log(`[control-api] fetchControlApi response: status=${res.status}`);
+    return res;
+  } catch (err) {
+    console.error(`[control-api] fetchControlApi FAILED: ${err instanceof Error ? err.message : String(err)}`);
     return controlApiUnavailableResponse();
   }
 }

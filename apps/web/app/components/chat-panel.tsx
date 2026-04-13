@@ -1722,6 +1722,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 
 				userScrolledAwayRef.current = false;
 
+				console.log("[chat-panel] handleSend: gatewaySessionKey=", gatewaySessionKey, "sessionId=", sessionIdRef.current);
+
 				if (gatewaySessionKey) {
 					const userMsg = {
 						id: `user-${Date.now()}`,
@@ -1752,6 +1754,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 					setMessages((prev) => [...prev, userMsg]);
 
 					try {
+						console.log("[chat-panel] POST /api/chat starting, sessionId=", sid);
 						const chatRes = await fetch("/api/chat", {
 							method: "POST",
 							headers: { "Content-Type": "application/json" },
@@ -1761,9 +1764,11 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 								userHtml: pendingHtmlRef.current ?? undefined,
 							}),
 						});
+						console.log("[chat-panel] POST /api/chat response: status=", chatRes.status, "ok=", chatRes.ok, "hasBody=", !!chatRes.body);
 						pendingHtmlRef.current = null;
 						if (!chatRes.ok) {
 							const errText = await chatRes.text().catch(() => `HTTP ${chatRes.status}`);
+							console.error("[chat-panel] POST /api/chat error:", errText);
 							setStreamError(`Chat request failed: ${errText}`);
 						} else if (chatRes.body) {
 							// Read the SSE stream directly from the POST response
@@ -2002,6 +2007,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 					setMessages((prev) => [...prev, userMsg]);
 
 					try {
+						console.log("[chat-panel] sendNewMessage: POST /api/chat starting, sessionId=", sessionId);
 						const chatRes = await fetch("/api/chat", {
 							method: "POST",
 							headers: { "Content-Type": "application/json" },
@@ -2010,8 +2016,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
 								sessionId,
 							}),
 						});
+						console.log("[chat-panel] sendNewMessage: POST /api/chat response: status=", chatRes.status, "ok=", chatRes.ok, "hasBody=", !!chatRes.body);
 						if (!chatRes.ok) {
 							const errText = await chatRes.text().catch(() => `HTTP ${chatRes.status}`);
+							console.error("[chat-panel] sendNewMessage: POST /api/chat error:", errText);
 							setStreamError(`Chat request failed: ${errText}`);
 						} else if (chatRes.body) {
 							const parser = createStreamParser();
