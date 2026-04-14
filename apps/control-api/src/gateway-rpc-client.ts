@@ -521,7 +521,13 @@ export class GatewayWsClient {
     this.pending.clear();
   }
 
+  private _msgCount = 0;
   private handleMessageText(text: string): void {
+    this._msgCount++;
+    // Debug: log event-type messages (skip tick/health noise). Log first 20 messages always.
+    if (this._msgCount <= 20 || (!text.includes('"tick"') && !text.includes('"health"') && !text.includes('"presence"'))) {
+      console.log(`[GatewayWsClient] msg#${this._msgCount}: ${text.slice(0, 400)}`);
+    }
     let frame: GatewayFrame | null = null;
     try {
       frame = JSON.parse(text) as GatewayFrame;

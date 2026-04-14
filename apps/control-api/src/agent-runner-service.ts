@@ -332,11 +332,13 @@ class GatewayProcessHandle extends EventEmitter implements AgentProcessHandle {
         timeout: 0,
       });
     }
+    console.log(`[GatewayProcessHandle] chat.send response: ok=${startRes.ok} payload=${JSON.stringify(startRes.payload ?? {}).slice(0, 500)}`);
     if (!startRes.ok) throw new Error(frameErrorMessage(startRes));
     const payload = asRecord(startRes.payload);
     const runId = payload && typeof payload.runId === "string" ? payload.runId : null;
     this.runId = runId;
     this.sessionStarted = true;
+    console.log(`[GatewayProcessHandle] chat.send OK: runId=${runId} sessionKey=${sessionKey}`);
     if (sessionKey) await this.ensureFullToolVerbose(sessionKey);
   }
 
@@ -417,6 +419,7 @@ class GatewayProcessHandle extends EventEmitter implements AgentProcessHandle {
 
   private async ensureFullToolVerbose(sessionKey: string): Promise<void> {
     if (!this.client || !sessionKey.trim()) return;
+    console.log(`[GatewayProcessHandle] ensureFullToolVerbose: sessionKey=${sessionKey}`);
     const patchParams: Record<string, string> = { key: sessionKey, thinkingLevel: "high", verboseLevel: "full", reasoningLevel: "on" };
     let attempt = 0;
     let lastMessage = "";
@@ -424,6 +427,7 @@ class GatewayProcessHandle extends EventEmitter implements AgentProcessHandle {
       attempt += 1;
       try {
         const patch = await this.client.request("sessions.patch", patchParams);
+        console.log(`[GatewayProcessHandle] sessions.patch: ok=${patch.ok} payload=${JSON.stringify(patch.payload ?? {}).slice(0, 300)}`);
         if (patch.ok) return;
         lastMessage = frameErrorMessage(patch);
         if (lastMessage.includes("thinkingLevel") && patchParams.thinkingLevel) {
@@ -459,6 +463,13 @@ class GatewayProcessHandle extends EventEmitter implements AgentProcessHandle {
   private handleGatewayEvent(frame: GatewayEventFrame): void {
     if (this.finished) return;
     if (frame.event === "connect.challenge") return;
+
+    // Log ALL gateway events for debugging
+    const debugPayload = asRecord(frame.payload);
+    const debugStream = debugPayload && typeof debugPayload.stream === "string" ? debugPayload.stream : "";
+    const debugPhase = debugPayload?.data && typeof (debugPayload.data as Record<string,unknown>).phase === "string" ? (debugPayload.data as Record<string,unknown>).phase : "";
+    const debugState = debugPayload && typeof debugPayload.state === "string" ? debugPayload.state : "";
+    console.log(`[GatewayProcessHandle] handleGatewayEvent: event=${frame.event} seq=${frame.seq ?? ""} stream=${debugStream} phase=${debugPhase} state=${debugState} sessionKey=${debugPayload?.sessionKey ?? ""}`);
 
     if (frame.event === "agent") {
       this.receivedAgentEvent = true;
