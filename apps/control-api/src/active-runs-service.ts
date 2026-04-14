@@ -993,7 +993,10 @@ function wireChildProcess(run: ActiveRun): void {
     else { (run.accumulated.parts[accTextIdx] as { type: "text"; text: string }).text += delta; }
   };
 
+  let wireEmitCount = 0;
   const emit = (event: SseEvent) => {
+    wireEmitCount++;
+    if (wireEmitCount <= 10) console.log(`[wireChildProcess] emit #${wireEmitCount}: type=${event.type} subscribers=${run.subscribers.size}`);
     run.eventBuffer.push(event);
     for (const sub of run.subscribers) { try { sub(event); } catch { /* ignore */ } }
     schedulePersist(run);
@@ -1208,11 +1211,17 @@ function wireChildProcess(run: ActiveRun): void {
     }
   };
 
+  let rlLineCount = 0;
   rl.on("line", (line: string) => {
     if (!line.trim()) return;
+    rlLineCount++;
     let ev: AgentEvent;
-    try { ev = JSON.parse(line) as AgentEvent; } catch { return; }
-    if (ev.sessionKey && ev.sessionKey !== parentSessionKey) return;
+    try { ev = JSON.parse(line) as AgentEvent; } catch { console.warn("[wireChildProcess] rl parse error:", line.slice(0, 200)); return; }
+    if (rlLineCount <= 5) console.log(`[wireChildProcess] rl line #${rlLineCount}: event=${ev.event} stream=${ev.stream ?? ""} sessionKey=${ev.sessionKey ?? ""}`);
+    if (ev.sessionKey && ev.sessionKey !== parentSessionKey) {
+      if (rlLineCount <= 5) console.log(`[wireChildProcess] rl line #${rlLineCount}: SKIPPED (sessionKey mismatch: ${ev.sessionKey} !== ${parentSessionKey})`);
+      return;
+    }
     const gSeq = typeof (ev as Record<string, unknown>).globalSeq === "number" ? (ev as Record<string, unknown>).globalSeq as number : undefined;
     if (gSeq !== undefined && gSeq > run.lastGlobalSeq) run.lastGlobalSeq = gSeq;
     processParentEvent(ev);

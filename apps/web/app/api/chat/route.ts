@@ -1,6 +1,7 @@
 import { proxyControlApiStream } from "@/lib/control-api";
 
 export const runtime = "nodejs";
+export const maxDuration = 300; // 5 minutes — SSE streams need extended timeout
 
 export async function POST(req: Request) {
   const body = await req.text();
